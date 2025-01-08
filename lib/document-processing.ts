@@ -1,6 +1,10 @@
 import { OpenAI } from "openai";
 
-// Initialize OpenAI with API key
+// Ensure this code only runs on the server side
+if (typeof window !== 'undefined') {
+  throw new Error('This module can only be used on the server side');
+}
+
 const openai = new OpenAI({ 
   apiKey: process.env.OPENAI_API_KEY 
 });
