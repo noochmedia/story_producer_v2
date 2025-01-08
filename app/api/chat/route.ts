@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { AI_CONFIG } from '@/lib/ai-config'
 
 export async function POST(req: Request) {
-  const { messages, projectDetails, sources, model, temperature, max_tokens, prompts } = await req.json()
+  const { messages, projectDetails, sources, model, temperature, max_tokens, prompts, stream = false } = await req.json()
 
   console.log('Received sources in chat API:', sources ? 'Sources available' : 'No sources available');
 
@@ -19,20 +19,21 @@ ${prompts.map((prompt: string, index: number) => `${index + 1}. ${prompt}`).join
 IMPORTANT: Always refer to and use the provided sources in your responses. If relevant information is available in the sources, incorporate it into your answer.`
 
   console.log('Sending request to DeepSeek API...');
-  const response = await fetch('https://api.deepseek.com/v1/chat/completions', {
+  const response = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+      'Authorization': `Bearer ${process.env.DEEPINFRA_TOKEN}`,
     },
     body: JSON.stringify({
-      model,
+      model: "deepseek-ai/DeepSeek-V3",
       messages: [
         { role: "system", content: systemMessage },
         ...messages
       ],
       temperature,
       max_tokens,
+      stream,
     }),
   })
 
@@ -41,8 +42,63 @@ IMPORTANT: Always refer to and use the provided sources in your responses. If re
     throw new Error(`DeepSeek API request failed`);
   }
 
-  const data = await response.json()
-  console.log('Received response from DeepSeek API');
-  return NextResponse.json(data)
-}
+  // Handle streaming response
+  if (stream) {
+    const encoder = new TextEncoder();
+    const decoder = new TextDecoder();
+    const reader = response.body?.getReader();
+    
+    if (!reader) {
+      throw new Error('No response body available for streaming');
+    }
 
+    return new Response(
+      new ReadableStream({
+        async start(controller) {
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              const chunk = decoder.decode(value);
+              const lines = chunk
+                .split('\n')
+                .filter(line => line.trim() !== '');
+
+              for (const line of lines) {
+                if (line.startsWith('data: ')) {
+                  const data = line.slice(6);
+                  if (data === '[DONE]') {
+                    controller.close();
+                    return;
+                  }
+                  try {
+                    const parsed = JSON.parse(data);
+                    const text = parsed.choices[0]?.delta?.content || '';
+                    controller.enqueue(encoder.encode(text));
+                  } catch (e) {
+                    console.error('Error parsing streaming response:', e);
+                  }
+                }
+              }
+            }
+          } catch (error) {
+            controller.error(error);
+          }
+        },
+      }),
+      {
+        headers: {
+          'Content-Type': 'text/event-stream',
+          'Cache-Control': 'no-cache',
+          'Connection': 'keep-alive',
+        },
+      }
+    );
+  }
+
+  // Handle regular response
+  const data = await response.json();
+  console.log('Received response from DeepSeek API');
+  return NextResponse.json(data);
+}

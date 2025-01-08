@@ -1,8 +1,8 @@
-
 import { Pinecone } from '@pinecone-database/pinecone'
+import { generateEmbedding } from './document-processing'
 
 export const AI_CONFIG = {
-  model: "deepseek-chat",
+  model: "deepseek-ai/DeepSeek-V3",
   temperature: 0.7,
   max_tokens: 2000,
   systemPrompt: `You are an AI assistant focused on helping with story development and production. 
@@ -34,15 +34,27 @@ export async function getAIResponse(messages: any[], projectDetails: string) {
   if (typeof window === 'undefined') {
     // Server-side
     try {
-      const pinecone = new Pinecone({
-        apiKey: process.env.PINECONE_API_KEY!,
-        environment: 'aped-4627-b74a',
-      });
-      const index = pinecone.index('story-tools-embeddings-sj0uqym');
+      if (!process.env.PINECONE_API_KEY) {
+        throw new Error('PINECONE_API_KEY environment variable is not set');
+      }
+
+      if (!process.env.PINECONE_INDEX) {
+        throw new Error('PINECONE_INDEX environment variable is not set');
+      }
+
+      // Initialize Pinecone client
+      const pinecone = new Pinecone();
+      
+      const index = pinecone.index(process.env.PINECONE_INDEX);
+      
+      console.log('Generating embedding for query...');
+      // Generate embedding for the last message to find relevant sources
+      const lastMessage = messages[messages.length - 1];
+      const queryEmbedding = await generateEmbedding(lastMessage.content);
       
       console.log('Querying Pinecone for sources...');
       const queryResponse = await index.query({
-        vector: Array(384).fill(0),  // Dummy vector
+        vector: queryEmbedding,
         topK: 10,  // Retrieve more matches for better coverage
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
@@ -66,6 +78,10 @@ export async function getAIResponse(messages: any[], projectDetails: string) {
       console.error('Error fetching sources from Pinecone:', error);
       sources = 'Error fetching sources';
     }
+  }
+
+  if (!process.env.DEEPINFRA_TOKEN) {
+    throw new Error('DEEPINFRA_TOKEN environment variable is not set');
   }
 
   const apiUrl = typeof window !== 'undefined' 

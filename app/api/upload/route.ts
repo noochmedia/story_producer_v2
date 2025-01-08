@@ -1,4 +1,3 @@
-
 import { NextRequest, NextResponse } from 'next/server'
 import { Pinecone } from '@pinecone-database/pinecone'
 import { put } from '@vercel/blob'
@@ -39,10 +38,8 @@ export async function POST(request: NextRequest) {
     const fileType = file.type.startsWith('video/') ? 'video' :
                      file.type.startsWith('audio/') ? 'audio' : 'document'
 
-    // Store embedding in Pinecone
-    const pinecone = new Pinecone({
-      apiKey: process.env.PINECONE_API_KEY!,
-    })
+    // Initialize Pinecone client
+    const pinecone = new Pinecone();
 
     const index = pinecone.index(process.env.PINECONE_INDEX!)
 

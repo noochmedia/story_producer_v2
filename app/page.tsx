@@ -1,7 +1,7 @@
 import { Header } from "@/components/header"
 import { Sidebar } from "@/components/sidebar"
 import { MainDashboard } from "@/components/main-dashboard"
-
+ 
 export default function Home() {
   return (
     <div className="flex h-screen bg-background">
@@ -15,4 +15,3 @@ export default function Home() {
     </div>
   )
 }
-

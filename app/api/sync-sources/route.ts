@@ -1,20 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Pinecone } from '@pinecone-database/pinecone'
 import { list, del } from '@vercel/blob'
+import { generateEmbedding } from '@/lib/document-processing'
 
 export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
-    const pinecone = new Pinecone({
-      apiKey: process.env.PINECONE_API_KEY!,
-    })
+    if (!process.env.PINECONE_API_KEY) {
+      throw new Error('PINECONE_API_KEY environment variable is not set');
+    }
 
-    const index = pinecone.index(process.env.PINECONE_INDEX!)
+    if (!process.env.PINECONE_INDEX) {
+      throw new Error('PINECONE_INDEX environment variable is not set');
+    }
+
+    // Initialize Pinecone client
+    const pinecone = new Pinecone();
+
+    const index = pinecone.index(process.env.PINECONE_INDEX)
+
+    // Generate a neutral embedding for listing all sources
+    const queryEmbedding = await generateEmbedding("list all sources");
 
     // Fetch all vectors from Pinecone
     const queryResponse = await index.query({
-      vector: Array(384).fill(0),  // Dummy vector
+      vector: queryEmbedding,
       topK: 10000,
       includeMetadata: true,
     })
@@ -68,4 +79,3 @@ export async function POST(request: NextRequest) {
     }, { status: 500 })
   }
 }
-

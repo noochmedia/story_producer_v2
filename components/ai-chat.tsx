@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -18,6 +18,7 @@ export function AIChat() {
   const [isLoading, setIsLoading] = useState(false)
   const [projectDetails, setProjectDetails] = useState('')
   const { toast } = useToast()
+  const abortControllerRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     const fetchProjectDetails = async () => {
@@ -49,27 +50,88 @@ export function AIChat() {
     setIsLoading(true)
 
     try {
-      const aiResponse = await getAIResponse([...messages, userMessage], projectDetails)
-      const aiMessage: Message = { role: 'assistant', content: aiResponse.choices[0].message.content }
-      setMessages(prev => [...prev, aiMessage])
+      // Create a new AbortController for this request
+      abortControllerRef.current = new AbortController()
+
+      // Add a temporary assistant message that will be updated with streaming content
+      const tempAssistantMessage: Message = { role: 'assistant', content: '' }
+      setMessages(prev => [...prev, tempAssistantMessage])
+
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [...messages, userMessage],
+          projectDetails,
+          stream: true
+        }),
+        signal: abortControllerRef.current.signal
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to get AI response')
+      }
+
+      const reader = response.body?.getReader()
+      const decoder = new TextDecoder()
+
+      if (!reader) {
+        throw new Error('No response body available')
+      }
+
+      let accumulatedContent = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        const chunk = decoder.decode(value)
+        accumulatedContent += chunk
+
+        // Update the last message with the accumulated content
+        setMessages(prev => {
+          const newMessages = [...prev]
+          newMessages[newMessages.length - 1] = {
+            role: 'assistant',
+            content: accumulatedContent
+          }
+          return newMessages
+        })
+      }
 
       // Store the conversation in Pinecone
       await fetch('/api/store-conversation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages: [...messages, userMessage, aiMessage] })
+        body: JSON.stringify({
+          messages: [...messages, userMessage, { role: 'assistant', content: accumulatedContent }]
+        })
       })
     } catch (error) {
-      console.error('Error getting AI response:', error)
-      toast({
-        title: "Error",
-        description: "Failed to get AI response. Please try again.",
-        variant: "destructive",
-      })
+      if (error instanceof Error && error.name === 'AbortError') {
+        console.log('Request was cancelled')
+      } else {
+        console.error('Error getting AI response:', error)
+        toast({
+          title: "Error",
+          description: "Failed to get AI response. Please try again.",
+          variant: "destructive",
+        })
+      }
     } finally {
       setIsLoading(false)
+      abortControllerRef.current = null
     }
   }
+
+  // Cancel ongoing request when component unmounts
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort()
+      }
+    }
+  }, [])
 
   return (
     <div className="h-[400px] flex flex-col">
@@ -98,4 +160,3 @@ export function AIChat() {
     </div>
   )
 }
-
