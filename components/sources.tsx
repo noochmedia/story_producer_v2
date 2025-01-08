@@ -119,7 +119,7 @@ export function Sources() {
         </div>
       ) : (
         <ul className="space-y-1">
-          {sources.map((source) => (
+          {Array.isArray(sources) && sources.map((source) => (
             <li 
               key={source.id} 
               className="flex items-center justify-between space-x-2 hover:bg-accent p-1 rounded-md text-sm"
