@@ -1,3 +1,5 @@
+import { Pinecone } from '@pinecone-database/pinecone'
+
 export const AI_CONFIG = {
   model: "deepseek-chat",
   temperature: 0.7,
@@ -6,7 +8,7 @@ export const AI_CONFIG = {
 Analyze content thoughtfully and provide detailed, constructive feedback.
 When discussing story elements, consider structure, character development, pacing, and thematic coherence.
 For production-related queries, focus on practical implementation and industry best practices.
-Always consider the following project details in your responses:`,
+Always consider the following project details and available sources in your responses:`,
   prompts: [
     "Analyze the narrative structure and suggest improvements.",
     "Identify potential plot holes and propose solutions.",
@@ -26,28 +28,65 @@ Always consider the following project details in your responses:`,
 }
 
 export async function getAIResponse(messages: any[], projectDetails: string) {
-  try {
-    const response = await fetch('/api/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        messages,
-        projectDetails,
-        ...AI_CONFIG
-      }),
-    })
+  let sources = '';
+  
+  if (typeof window === 'undefined') {
+    // Server-side
+    try {
+      const pinecone = new Pinecone({
+        apiKey: process.env.PINECONE_API_KEY!,
+        environment: 'aped-4627-b74a',
+      });
+      const index = pinecone.index('story-tools-embeddings-sj0uqym');
+      
+      console.log('Querying Pinecone for sources...');
+      const queryResponse = await index.query({
+        vector: Array(384).fill(0),  // Dummy vector
+        topK: 5,
+        includeMetadata: true,
+        filter: { type: { $eq: 'source' } }
+      });
 
-    if (!response.ok) {
-      throw new Error('AI response failed')
+      console.log(`Found ${queryResponse.matches.length} sources from Pinecone`);
+      sources = queryResponse.matches
+        .map(match => `Source: ${match.metadata?.fileName}\nContent: ${match.metadata?.content}`)
+        .join('\n\n');
+
+      if (sources) {
+        console.log('Sources retrieved successfully');
+      } else {
+        console.log('No sources found in Pinecone');
+      }
+    } catch (error) {
+      console.error('Error fetching sources from Pinecone:', error);
+      sources = 'Error fetching sources';
     }
-
-    const data = await response.json()
-    return data
-  } catch (error) {
-    console.error('Error getting AI response:', error)
-    throw error
   }
+
+  const apiUrl = typeof window !== 'undefined' 
+    ? '/api/chat'
+    : `${process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000'}/api/chat`;
+
+  console.log('Sending request to AI chat API...');
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      messages,
+      projectDetails,
+      sources,
+      ...AI_CONFIG
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error('AI response failed');
+  }
+
+  const data = await response.json();
+  console.log('Received AI response successfully');
+  return data;
 }
 

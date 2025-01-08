@@ -1,15 +1,18 @@
+"use client"
+
+import { useState, useCallback } from 'react'
 import { FileUpload } from "./file-upload"
-import { RecentFiles } from "./recent-files"
+import { Sources } from "./sources"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { ProjectDetails } from "./project-details"
 
-const recentFiles = [
-  { id: '1', name: "Project Proposal.docx", type: "document" as const, url: "/placeholder.pdf" },
-  { id: '2', name: "Meeting Recording.mp4", type: "video" as const, url: "/placeholder.mp4" },
-  { id: '3', name: "Podcast Episode.mp3", type: "audio" as const, url: "/placeholder.mp3" },
-]
-
 export function Sidebar() {
+  const [refreshKey, setRefreshKey] = useState(0)
+
+  const handleRefresh = useCallback(() => {
+    setRefreshKey(prevKey => prevKey + 1)
+  }, [])
+
   return (
     <aside className="w-80 border-r flex flex-col h-screen">
       <div className="p-4 border-b">
@@ -27,16 +30,13 @@ export function Sidebar() {
             <CardTitle className="text-lg">File Upload</CardTitle>
           </CardHeader>
           <CardContent className="p-4 pt-0">
-            <FileUpload />
+            <FileUpload onUploadSuccess={handleRefresh} />
           </CardContent>
         </Card>
         
         <Card className="flex-grow overflow-hidden flex flex-col">
-          <CardHeader className="p-4 pb-2">
-            <CardTitle className="text-lg">Recent Files</CardTitle>
-          </CardHeader>
-          <CardContent className="p-4 pt-0 overflow-y-auto flex-grow">
-            <RecentFiles files={recentFiles} />
+          <CardContent className="p-4 overflow-y-auto flex-grow">
+            <Sources key={refreshKey} />
           </CardContent>
         </Card>
       </div>

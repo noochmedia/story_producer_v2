@@ -5,12 +5,18 @@ import { Upload } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useToast } from "@/components/ui/use-toast"
 
-export function FileUpload() {
+interface FileUploadProps {
+  onUploadSuccess: () => void
+}
+
+export function FileUpload({ onUploadSuccess }: FileUploadProps) {
   const [uploadProgress, setUploadProgress] = useState(0)
   const [isProcessing, setIsProcessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const { toast } = useToast()
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
@@ -30,17 +36,28 @@ export function FileUpload() {
         })
 
         if (!response.ok) {
-          throw new Error('Upload failed')
+          const errorData = await response.json()
+          throw new Error(errorData.message || 'Upload failed')
         }
 
         const result = await response.json()
         console.log('File uploaded and processed:', result)
         setSuccessMessage(result.message)
-        setIsProcessing(false)
         setUploadProgress(100)
+        onUploadSuccess()
+        toast({
+          title: "Success",
+          description: "File uploaded successfully",
+        })
       } catch (err) {
         console.error('Error uploading file:', err)
-        setError('Failed to upload and process file')
+        setError(err instanceof Error ? err.message : 'Failed to upload and process file')
+        toast({
+          title: "Error",
+          description: "Failed to upload file. Please try again.",
+          variant: "destructive",
+        })
+      } finally {
         setIsProcessing(false)
       }
     }
@@ -54,7 +71,7 @@ export function FileUpload() {
           className="hidden"
           id="file-upload"
           onChange={handleFileUpload}
-          accept=".txt,.pdf,.doc,.docx"
+          accept=".txt,.pdf,.doc,.docx,.mp3,.mp4,.avi,.mov"
         />
         <label htmlFor="file-upload" className="flex flex-col items-center cursor-pointer">
           <Upload className="h-6 w-6 text-muted-foreground mb-1" />
