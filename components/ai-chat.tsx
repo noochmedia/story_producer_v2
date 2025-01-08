@@ -4,8 +4,8 @@ import { useState, useEffect, useRef } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { getAIResponse } from "@/lib/ai-config"
 import { useToast } from "@/components/ui/use-toast"
+import { AI_CONFIG } from "@/lib/ai-config"
 
 interface Message {
   role: 'user' | 'assistant'
@@ -63,6 +63,10 @@ export function AIChat() {
         body: JSON.stringify({
           messages: [...messages, userMessage],
           projectDetails,
+          model: AI_CONFIG.model,
+          temperature: AI_CONFIG.temperature,
+          max_tokens: AI_CONFIG.max_tokens,
+          prompts: AI_CONFIG.prompts,
           stream: true
         }),
         signal: abortControllerRef.current.signal

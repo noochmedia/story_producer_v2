@@ -17,18 +17,9 @@ interface PineconeMatch {
 
 export async function GET(request: NextRequest) {
     try {
-        if (!process.env.PINECONE_API_KEY) {
-            throw new Error('PINECONE_API_KEY environment variable is not set');
-        }
-
-        if (!process.env.PINECONE_INDEX) {
-            throw new Error('PINECONE_INDEX environment variable is not set');
-        }
-
         // Initialize Pinecone client
         const pinecone = new Pinecone();
-
-        const index = pinecone.index(process.env.PINECONE_INDEX)
+        const index = pinecone.index(process.env.PINECONE_INDEX!)
 
         // Generate a neutral embedding for listing all sources
         // This is a simplified approach - in a production environment,
@@ -55,7 +46,7 @@ export async function GET(request: NextRequest) {
 
             return NextResponse.json({ sources })
         } else {
-            console.error('No sources found in Pinecone.')
+            console.log('No sources found in Pinecone.')
             return NextResponse.json({ sources: [] })
         }
     } catch (error) {

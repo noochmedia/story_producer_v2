@@ -7,18 +7,9 @@ export const dynamic = 'force-dynamic'
 
 export async function POST(request: NextRequest) {
   try {
-    if (!process.env.PINECONE_API_KEY) {
-      throw new Error('PINECONE_API_KEY environment variable is not set');
-    }
-
-    if (!process.env.PINECONE_INDEX) {
-      throw new Error('PINECONE_INDEX environment variable is not set');
-    }
-
     // Initialize Pinecone client
     const pinecone = new Pinecone();
-
-    const index = pinecone.index(process.env.PINECONE_INDEX)
+    const index = pinecone.index(process.env.PINECONE_INDEX!)
 
     // Generate a neutral embedding for listing all sources
     const queryEmbedding = await generateEmbedding("list all sources");
