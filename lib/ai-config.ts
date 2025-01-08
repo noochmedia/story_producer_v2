@@ -1,3 +1,4 @@
+
 import { Pinecone } from '@pinecone-database/pinecone'
 
 export const AI_CONFIG = {
@@ -42,14 +43,18 @@ export async function getAIResponse(messages: any[], projectDetails: string) {
       console.log('Querying Pinecone for sources...');
       const queryResponse = await index.query({
         vector: Array(384).fill(0),  // Dummy vector
-        topK: 5,
+        topK: 10,  // Retrieve more matches for better coverage
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
       });
 
       console.log(`Found ${queryResponse.matches.length} sources from Pinecone`);
       sources = queryResponse.matches
-        .map(match => `Source: ${match.metadata?.fileName}\nContent: ${match.metadata?.content}`)
+        .map(match => {
+          const fileName = match.metadata?.fileName || 'Unknown File';
+          const content = match.metadata?.content || 'No content available';
+          return `Source: ${fileName}\nContent: ${content}`;
+        })
         .join('\n\n');
 
       if (sources) {
@@ -89,4 +94,3 @@ export async function getAIResponse(messages: any[], projectDetails: string) {
   console.log('Received AI response successfully');
   return data;
 }
-

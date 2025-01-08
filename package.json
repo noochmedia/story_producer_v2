@@ -59,7 +59,8 @@
     "vaul": "^0.9.6",
     "zod": "^3.24.1",
     "@pinecone-database/pinecone": "latest",
-    "@vercel/blob": "latest"
+    "@vercel/blob": "latest",
+    "openai": "^4.0.0"
   },
   "devDependencies": {
     "@types/node": "^22",

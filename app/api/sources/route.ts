@@ -28,7 +28,8 @@ export async function GET(request: NextRequest) {
                     id: match.id,
                     name: match.metadata.fileName as string,
                     type: match.metadata.fileType || 'unknown',
-                    url: match.metadata.fileUrl || ''
+                    url: match.metadata.fileUrl || '',
+                    content: match.metadata.content || 'No content available' // Include content
                 }))
 
             return NextResponse.json({ sources })
