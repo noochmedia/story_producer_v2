@@ -1,11 +1,7 @@
 
-import { Configuration, OpenAIApi } from 'openai';
+import { OpenAI } from "openai";
 
-const openaiConfig = new Configuration({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-const openai = new OpenAIApi(openaiConfig);
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 /**
  * Generate embeddings using OpenAI's embedding model.
@@ -14,18 +10,18 @@ const openai = new OpenAIApi(openaiConfig);
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
   try {
-    const response = await openai.createEmbedding({
-      model: 'text-embedding-ada-002', // OpenAI's embedding model
+    const response = await openai.embeddings.create({
+      model: "text-embedding-ada-002",
       input: text,
     });
 
-    if (response.data && response.data.data.length > 0) {
-      return response.data.data[0].embedding;
+    if (response.data && response.data.length > 0) {
+      return response.data[0].embedding;
     } else {
-      throw new Error('Failed to generate embedding: No data in response.');
+      throw new Error("Failed to generate embedding: No data in response.");
     }
   } catch (error) {
-    console.error('Error generating embedding:', error);
+    console.error("Error generating embedding:", error);
     throw error;
   }
 }
