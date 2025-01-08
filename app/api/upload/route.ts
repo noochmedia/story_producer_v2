@@ -1,3 +1,4 @@
+
 import { NextRequest, NextResponse } from 'next/server'
 import { Pinecone } from '@pinecone-database/pinecone'
 import { put } from '@vercel/blob'
@@ -29,40 +30,37 @@ export async function POST(request: NextRequest) {
     const embedding = await generateEmbedding(processedContent)
 
     // Determine file type
-    const fileType = file.type.startsWith('video/') ? 'video' :
-                     file.type.startsWith('audio/') ? 'audio' : 'document'
+    const fileType = file.type.startsWith('video/') ? 'video' : file.type.startsWith('image/') ? 'image' : 'text'
 
-    // Store embedding in Pinecone
+    // Index metadata in Pinecone
     const pinecone = new Pinecone({
       apiKey: process.env.PINECONE_API_KEY!,
     })
 
     const index = pinecone.index(process.env.PINECONE_INDEX!)
 
-    const id = `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-
-    await index.upsert([{
-      id,
+    const upsertResponse = await index.upsert([{
+      id: `source_${Date.now()}`, // Unique ID for the source
       values: embedding,
       metadata: {
-        id,
         fileName: file.name,
         fileType,
         fileUrl: blob.url,
-        uploadDate: new Date().toISOString(),
-        type: 'source',  // Add this to distinguish sources from other data
-        content: processedContent  // Store the processed content for AI access
+        type: 'source'
       }
     }])
 
-    return NextResponse.json({ success: true, message: 'File uploaded and processed successfully', fileUrl: blob.url })
+    if (upsertResponse.upserts?.length > 0) {
+      return NextResponse.json({
+        success: true,
+        message: 'File uploaded and processed successfully',
+        fileUrl: blob.url,
+      })
+    } else {
+      throw new Error('Failed to index file metadata in Pinecone.')
+    }
   } catch (error) {
-    console.error('Error processing file:', error)
-    return NextResponse.json({ 
-      success: false, 
-      message: 'Error processing file', 
-      error: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 })
+    console.error('Error uploading file:', error)
+    return NextResponse.json({ success: false, message: 'File upload failed' }, { status: 500 })
   }
 }
-
