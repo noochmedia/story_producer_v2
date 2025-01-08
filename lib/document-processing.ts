@@ -46,7 +46,6 @@ const openai = new OpenAIApi(openaiConfig);
  * @param {string} text - The input text to generate embeddings for.
  * @returns {Promise<number[]>} - A promise resolving to an array of embedding values.
  */
-export async function generateEmbedding(text: string): Promise<number[]> {
   try {
     const response = await openai.createEmbedding({
       model: 'text-embedding-ada-002', // OpenAI's embedding model
