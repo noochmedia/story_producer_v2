@@ -18,8 +18,8 @@ export async function GET(request: NextRequest) {
 
     const index = pinecone.index(process.env.PINECONE_INDEX!)
 
-    // Generate an embedding for querying file sources
-    const queryEmbedding = await generateEmbedding('source_query')
+    // Generate a meaningful embedding for querying file sources
+    const queryEmbedding = await generateEmbedding('list_sources')
 
     // Fetch all vectors of type 'source'
     const queryResponse = await index.query({
@@ -31,16 +31,22 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    const sources = queryResponse.matches
-      .filter(match => match.metadata && match.metadata.fileName) // Ensure valid metadata
-      .map(match => ({
-        id: match.id,
-        name: match.metadata!.fileName as string,
-        type: match.metadata!.fileType as string || 'document',
-        url: match.metadata!.fileUrl as string || ''
-      }))
+    // Parse the results into a list of sources
+    if (queryResponse.matches?.length > 0) {
+      const sources = queryResponse.matches
+        .filter(match => match.metadata && match.metadata.fileName) // Ensure valid metadata
+        .map(match => ({
+          id: match.id,
+          name: match.metadata!.fileName as string,
+          type: match.metadata!.fileType as string || 'unknown',
+          url: match.metadata!.fileUrl as string || ''
+        }))
 
-    return NextResponse.json({ sources })
+      return NextResponse.json({ sources })
+    } else {
+      console.error('No sources found in Pinecone.')
+      return NextResponse.json({ sources: [] })
+    }
   } catch (error) {
     console.error('Error fetching sources:', error)
     return NextResponse.json({ error: 'Failed to fetch sources' }, { status: 500 })
