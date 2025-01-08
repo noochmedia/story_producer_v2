@@ -29,7 +29,7 @@ export async function POST(request: NextRequest) {
     const embedding = await generateEmbedding(processedContent)
 
     // Validate embedding dimensions
-    const expectedDimension = 384; // Update this to match your Pinecone index's dimensionality
+    const expectedDimension = 1536; // Updated to match text-embedding-ada-002 dimensions
     if (embedding.length !== expectedDimension) {
       throw new Error(`Embedding dimension mismatch: expected ${expectedDimension}, got ${embedding.length}`)
     }
