@@ -74,7 +74,7 @@ export function AIChat() {
   return (
     <div className="h-[400px] flex flex-col">
       <ScrollArea className="flex-grow mb-4 p-4 border rounded">
-        {messages.map((message, index) => (
+        {Array.isArray(messages) && messages.map((message, index) => (
           <div key={index} className={`mb-2 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
             <span className={`inline-block p-2 rounded-lg ${message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
               {message.content}
