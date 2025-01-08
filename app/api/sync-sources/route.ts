@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Pinecone } from '@pinecone-database/pinecone'
 import { list, del } from '@vercel/blob'
-import { generateEmbedding } from '@/lib/document-processing'
+import { generateEmbedding } from '../../../lib/document-processing'
 
 export const dynamic = 'force-dynamic'
 

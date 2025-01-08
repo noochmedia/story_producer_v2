@@ -1,11 +1,9 @@
 import { OpenAI } from "openai";
 
-// Only initialize OpenAI on the server side
-const openai = typeof window === 'undefined' 
-  ? new OpenAI({ 
-      apiKey: process.env.OPENAI_API_KEY,
-    }) 
-  : null;
+// Initialize OpenAI with API key
+const openai = new OpenAI({ 
+  apiKey: process.env.OPENAI_API_KEY 
+});
 
 /**
  * Generate embeddings using OpenAI's embedding model.
@@ -13,26 +11,20 @@ const openai = typeof window === 'undefined'
  * @returns {Promise<number[]>} - A promise resolving to an array of embedding values.
  */
 export async function generateEmbedding(text: string): Promise<number[]> {
-  // Ensure we're on the server side
-  if (typeof window !== 'undefined') {
-    throw new Error('generateEmbedding must be called from the server side');
-  }
-
-  if (!openai) {
-    throw new Error('OpenAI client not initialized');
-  }
-
   if (!process.env.OPENAI_API_KEY) {
     throw new Error('OPENAI_API_KEY environment variable is not set');
   }
 
   try {
+    console.log('Generating embedding for text:', text.substring(0, 50) + '...');
     const response = await openai.embeddings.create({
       model: "text-embedding-ada-002",
       input: text,
     });
+    console.log('Embedding generated successfully');
 
     if (response.data && response.data.length > 0) {
+      console.log('Embedding length:', response.data[0].embedding.length);
       return response.data[0].embedding;
     } else {
       throw new Error("Failed to generate embedding: No data in response.");
