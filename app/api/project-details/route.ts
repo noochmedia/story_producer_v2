@@ -1,87 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Pinecone } from '@pinecone-database/pinecone'
-import { generateEmbedding } from '../../../lib/document-processing'
+import { promises as fs } from 'fs'
+import path from 'path'
 
-const PROJECT_DETAILS_ID = 'project_details'
+const DATA_DIR = path.join(process.cwd(), 'data')
+const PROJECT_DETAILS_FILE = path.join(DATA_DIR, 'project-details.json')
+
+// Ensure data directory exists
+async function ensureDataDir() {
+  try {
+    await fs.access(DATA_DIR)
+  } catch {
+    await fs.mkdir(DATA_DIR, { recursive: true })
+  }
+}
 
 // Fetch project details
 export async function GET() {
   try {
-    // Log environment variables (without exposing sensitive values)
-    console.log('Environment check:', {
-      hasOpenAIKey: !!process.env.OPENAI_API_KEY,
-      hasPineconeKey: !!process.env.PINECONE_API_KEY,
-      hasPineconeIndex: !!process.env.PINECONE_INDEX,
-      pineconeIndex: process.env.PINECONE_INDEX,
-      nodeEnv: process.env.NODE_ENV
-    });
+    await ensureDataDir()
 
-    // Validate environment variables
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY environment variable is not set');
-    }
-    if (!process.env.PINECONE_API_KEY) {
-      throw new Error('PINECONE_API_KEY environment variable is not set');
-    }
-    if (!process.env.PINECONE_INDEX) {
-      throw new Error('PINECONE_INDEX environment variable is not set');
-    }
-
-    console.log('Initializing Pinecone...');
-    const pinecone = new Pinecone({
-      apiKey: process.env.PINECONE_API_KEY!
-    });
-    console.log('Pinecone initialized');
-
-    console.log('Getting Pinecone index...');
-    const index = pinecone.index(process.env.PINECONE_INDEX);
-    console.log('Got Pinecone index');
-
-    console.log('Generating embedding...');
     try {
-      const queryEmbedding = await generateEmbedding(PROJECT_DETAILS_ID);
-      console.log('Generated embedding, length:', queryEmbedding.length);
-
-      console.log('Querying Pinecone...');
-      const queryResponse = await index.query({
-        vector: queryEmbedding,
-        topK: 1,
-        includeMetadata: true,
-        filter: { id: { $eq: PROJECT_DETAILS_ID } }
-      });
-      console.log('Pinecone query complete, matches:', queryResponse.matches?.length || 0);
-
-      if (queryResponse.matches?.length > 0 && queryResponse.matches[0].metadata?.details) {
-        console.log('Found project details');
-        return NextResponse.json({ details: queryResponse.matches[0].metadata.details })
-      } else {
-        console.log('No project details found');
+      const content = await fs.readFile(PROJECT_DETAILS_FILE, 'utf-8')
+      const data = JSON.parse(content)
+      return NextResponse.json({ details: data.details })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+        // File doesn't exist yet, return empty details
         return NextResponse.json({ details: '' })
       }
-    } catch (error) {
-      console.error('Error generating embedding:', error);
-      throw new Error(`Failed to generate embedding: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error
     }
   } catch (error) {
-    // Enhanced error logging
-    console.error('Detailed error in project details:', {
-      error: error instanceof Error ? {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      } : error,
-      env: {
-        hasOpenAI: !!process.env.OPENAI_API_KEY,
-        hasPineconeKey: !!process.env.PINECONE_API_KEY,
-        hasPineconeIndex: !!process.env.PINECONE_INDEX,
-        pineconeIndex: process.env.PINECONE_INDEX
-      }
-    });
-
+    console.error('Error in GET /api/project-details:', error)
     return NextResponse.json({ 
       error: 'Failed to fetch project details',
-      details: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined
+      details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
 }
@@ -91,69 +44,21 @@ export async function POST(request: NextRequest) {
   try {
     const { details } = await request.json()
 
-    if (typeof details !== 'string' || details.trim() === '') {
+    if (typeof details !== 'string') {
       return NextResponse.json({ error: 'Invalid details format' }, { status: 400 })
     }
 
-    // Validate environment variables
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY environment variable is not set');
-    }
-    if (!process.env.PINECONE_API_KEY) {
-      throw new Error('PINECONE_API_KEY environment variable is not set');
-    }
-    if (!process.env.PINECONE_INDEX) {
-      throw new Error('PINECONE_INDEX environment variable is not set');
-    }
+    await ensureDataDir()
+    
+    // Save to file
+    await fs.writeFile(PROJECT_DETAILS_FILE, JSON.stringify({ details }, null, 2))
 
-    console.log('Initializing Pinecone...');
-    const pinecone = new Pinecone({
-      apiKey: process.env.PINECONE_API_KEY!
-    });
-    console.log('Pinecone initialized');
-
-    console.log('Getting Pinecone index...');
-    const index = pinecone.index(process.env.PINECONE_INDEX);
-    console.log('Got Pinecone index');
-
-    console.log('Generating embedding...');
-    try {
-      const embedding = await generateEmbedding(details);
-      console.log('Generated embedding, length:', embedding.length);
-
-      console.log('Upserting to Pinecone...');
-      await index.upsert([{
-        id: PROJECT_DETAILS_ID,
-        values: embedding,
-        metadata: { details }
-      }]);
-      console.log('Successfully upserted to Pinecone');
-
-      return NextResponse.json({ success: true });
-    } catch (error) {
-      console.error('Error generating embedding:', error);
-      throw new Error(`Failed to generate embedding: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
+    return NextResponse.json({ success: true })
   } catch (error) {
-    // Enhanced error logging
-    console.error('Detailed error in saving project details:', {
-      error: error instanceof Error ? {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      } : error,
-      env: {
-        hasOpenAI: !!process.env.OPENAI_API_KEY,
-        hasPineconeKey: !!process.env.PINECONE_API_KEY,
-        hasPineconeIndex: !!process.env.PINECONE_INDEX,
-        pineconeIndex: process.env.PINECONE_INDEX
-      }
-    });
-
+    console.error('Error in POST /api/project-details:', error)
     return NextResponse.json({ 
       error: 'Failed to save project details',
-      details: error instanceof Error ? error.message : 'Unknown error',
-      stack: error instanceof Error ? error.stack : undefined
+      details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
 }

@@ -1,9 +1,10 @@
 "use client"
 
+import * as React from 'react'
 import { useState, useEffect } from 'react'
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
-import { useToast } from "@/components/ui/use-toast"
+import { Button } from "./ui/button"
+import { Textarea } from "./ui/textarea"
+import { useToast } from "./ui/use-toast"
 
 export function ProjectDetails() {
   const [details, setDetails] = useState('')
@@ -74,7 +75,7 @@ export function ProjectDetails() {
       <Textarea
         value={details}
         onChange={(e) => setDetails(e.target.value)}
-        placeholder="Enter project details..."
+        placeholder="Add your project details. The more information you provide, the better the results will be."
         className="h-40"
       />
       <Button onClick={saveDetails} disabled={isLoading}>
@@ -83,4 +84,3 @@ export function ProjectDetails() {
     </div>
   )
 }
-

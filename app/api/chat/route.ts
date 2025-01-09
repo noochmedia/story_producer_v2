@@ -112,6 +112,16 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   return validMatches;
 }
 
+function getBaseSystemMessage(projectDetails: string) {
+  let message = AI_CONFIG.systemPrompt;
+
+  if (projectDetails) {
+    message += `\n\nProject Context:\n${projectDetails}\n\n`;
+  }
+
+  return message;
+}
+
 export async function POST(req: Request) {
   const { messages, projectDetails, deepDive = false, isSoundbiteRequest = false, model, temperature, max_tokens, stream = false } = await req.json()
 
@@ -119,7 +129,8 @@ export async function POST(req: Request) {
     mode: deepDive ? 'Deep Dive' : 'Normal',
     type: isSoundbiteRequest ? 'Soundbite' : 'Regular',
     messageCount: messages.length,
-    lastMessage: messages[messages.length - 1]?.content
+    lastMessage: messages[messages.length - 1]?.content,
+    hasProjectDetails: !!projectDetails
   });
   
   try {
@@ -145,6 +156,9 @@ export async function POST(req: Request) {
               const relevantMemories = await queryMemory(userMessage.content);
               const memoryContext = formatMemoryForAI(relevantMemories);
 
+              // Start with base system message including project details
+              systemMessage = getBaseSystemMessage(projectDetails);
+
               if (deepDive) {
                 // Get initial context from Pinecone
                 relevantSources = await queryPineconeForContext(
@@ -157,8 +171,7 @@ export async function POST(req: Request) {
                   if (isSoundbiteRequest) {
                     const isFindSoundbite = userMessage.content.startsWith("What theme, idea, or statement type would you like?");
                     
-                    systemMessage = `${AI_CONFIG.systemPrompt}
-
+                    systemMessage += `
 You are a professional video editor searching through interview transcripts ${isFindSoundbite ? 'to find relevant soundbites' : 'to create specific soundbites'}. Your task is to ${isFindSoundbite ? 'identify quotes that match the requested theme or topic' : 'find quotes that best match the requested soundbite and speaker'}.
 
 Here are the relevant interview excerpts:
@@ -196,8 +209,7 @@ Creation Strategy:
 - Look for natural, authentic expressions
 - Identify quotes that capture the intended meaning`}`;
                   } else if (userMessage.content.startsWith("Who would you like a character brief on?")) {
-                    systemMessage = `${AI_CONFIG.systemPrompt}
-
+                    systemMessage += `
 You are a professional story analyst creating a detailed character profile. Your task is to analyze all available information about the specified character from the interview transcripts.
 
 Here are the relevant interview excerpts:
@@ -238,8 +250,7 @@ Remember to:
 - Note any conflicting information
 - Maintain objective analysis`;
                   } else if (userMessage.content.includes("relationship map")) {
-                    systemMessage = `${AI_CONFIG.systemPrompt}
-
+                    systemMessage += `
 You are a professional story analyst mapping character relationships. Your task is to analyze the connections between characters mentioned in the interview transcripts.
 
 Here are the relevant interview excerpts:
@@ -278,8 +289,7 @@ Remember to:
 - Note relationship changes
 - Indicate relationship strength`;
                   } else if (userMessage.content.includes("timeline")) {
-                    systemMessage = `${AI_CONFIG.systemPrompt}
-
+                    systemMessage += `
 You are a professional story analyst creating a chronological timeline. Your task is to organize events mentioned in the interview transcripts.
 
 Here are the relevant interview excerpts:
@@ -317,24 +327,64 @@ Remember to:
 - Note any timeline uncertainties
 - Connect related events
 - Highlight key moments`;
+                  } else {
+                    systemMessage += `
+Here are the relevant interview excerpts:
+
+${relevantSources.map(source => 
+  `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || 'No content available'}`
+).join('\n\n')}
+
+Previous Analyses:
+${memoryContext}
+
+Analyze these interview excerpts carefully and provide a detailed response to the user's question. 
+
+Format your response with clear structure and spacing:
+
+1. Start with a brief overview/introduction (2-3 sentences)
+
+2. Main Analysis:
+   - Break down your analysis into clear sections
+   - Use bullet points for key insights
+   - Start new paragraphs for new ideas
+   - Add a blank line between sections
+
+3. When quoting sources:
+   - Put the quote on its own line
+   - Include the source name
+   - Add your analysis below the quote
+
+4. If drawing connections:
+   - Clearly state the relationship
+   - Explain the significance
+   - Use examples from the sources
+
+5. End with a conclusion section that summarizes the key points
+
+Remember to:
+- Use clear headings for sections
+- Add blank lines between sections
+- Use bullet points for lists
+- Keep paragraphs focused and separated
+- Make quotes stand out visually
+
+If you find relevant information in the sources, incorporate it into your response and explain its significance. If you don't find a direct answer, explain what you can infer from the available information.`;
                   }
                 } else {
                   console.log('No relevant sources found');
-                  systemMessage = `${AI_CONFIG.systemPrompt}
-
-I've searched the interview transcripts but couldn't find any relevant information about that specific topic. Let me know if you'd like to know about something else from the interviews.`;
+                  systemMessage += `\nI've searched the interview transcripts but couldn't find any relevant information about that specific topic. Let me know if you'd like to know about something else from the interviews.`;
                 }
               } else {
-                systemMessage = `${AI_CONFIG.systemPrompt}
-
-Let me help you with your question. Note that I'm not currently using the interview transcripts. If you'd like me to check the transcripts, please enable the "Use sources" option.`;
+                systemMessage += `\nNote that I'm not currently using the interview transcripts. If you'd like me to check the transcripts, please enable the "Use sources" option.`;
               }
 
               console.log('System message prepared:', {
                 length: systemMessage.length,
                 includesSources: relevantSources.length > 0,
                 sourcesCount: relevantSources.length,
-                isSoundbiteRequest
+                isSoundbiteRequest,
+                hasProjectDetails: !!projectDetails
               });
 
               const stream = await openai.chat.completions.create({
