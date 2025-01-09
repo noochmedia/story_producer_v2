@@ -3,6 +3,7 @@ import { AI_CONFIG } from '../../../lib/ai-config'
 import { Pinecone, ScoredPineconeRecord } from '@pinecone-database/pinecone'
 import { generateEmbedding } from '../../../lib/document-processing'
 import { queryMemory, storeMemory, formatMemoryForAI } from '../../../lib/ai-memory'
+import OpenAI from 'openai'
 
 interface SourceMetadata {
   fileName?: string;
@@ -29,14 +30,6 @@ function cleanTranscriptContent(content: string): string {
     .filter(line => line.trim() && !line.includes('Inaudible'))
     .join('\n')
     .trim();
-}
-
-function splitSourcesIntoChunks(sources: PineconeMatch[], chunkSize: number = 2): PineconeMatch[][] {
-  const chunks: PineconeMatch[][] = [];
-  for (let i = 0; i < sources.length; i += chunkSize) {
-    chunks.push(sources.slice(i, i + chunkSize));
-  }
-  return chunks;
 }
 
 function processMatch(match: PineconeMatch): PineconeMatch {
@@ -101,107 +94,6 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   return validMatches;
 }
 
-async function handleStreamingResponse(reader: ReadableStreamDefaultReader<Uint8Array>, controller: ReadableStreamDefaultController) {
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split('\n');
-    buffer = lines.pop() || ''; // Keep the last partial line in the buffer
-
-    for (const line of lines) {
-      if (line.trim() === '') continue;
-      if (line.includes('data: [DONE]')) continue;
-
-      if (line.startsWith('data: ')) {
-        try {
-          const data = JSON.parse(line.slice(5));
-          const content = data.choices?.[0]?.delta?.content || 
-                         data.choices?.[0]?.text || '';
-          if (content) {
-            controller.enqueue(new TextEncoder().encode(content));
-          }
-        } catch (e) {
-          // If we can't parse as JSON but have content, send it directly
-          if (!line.includes('"content":null') && !line.includes('"role"')) {
-            const cleanLine = line.replace('data: ', '').trim();
-            if (cleanLine) {
-              controller.enqueue(new TextEncoder().encode(cleanLine));
-            }
-          }
-        }
-      } else if (!line.includes('data:')) {
-        // Direct text content
-        if (line.trim()) {
-          controller.enqueue(new TextEncoder().encode(line));
-        }
-      }
-    }
-  }
-
-  // Handle any remaining content in the buffer
-  if (buffer.trim() && !buffer.includes('data:')) {
-    controller.enqueue(new TextEncoder().encode(buffer));
-  }
-}
-
-async function processSourceChunk(
-  chunk: PineconeMatch[],
-  systemPrompt: string,
-  userMessage: string,
-  controller: ReadableStreamDefaultController,
-  isFirstChunk: boolean,
-  isLastChunk: boolean
-) {
-  const chunkSystemMessage = `${systemPrompt}
-
-Here are some relevant excerpts from the interviews:
-
-${chunk.map(source => 
-  `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || 'No content available'}`
-).join('\n\n')}
-
-${isFirstChunk ? 'Begin answering the user\'s question. Be specific and quote directly from the sources when possible.' : 
-  'Continue the previous response with information from these additional sources.'}
-${isLastChunk ? '\n\nThis is all the available information. Please conclude your response.' : 
-  '\n\nThere is more information to come in the next part.'}`;
-
-  const response = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${process.env.DEEPINFRA_TOKEN}`,
-    },
-    body: JSON.stringify({
-      model: "deepseek-ai/DeepSeek-V3",
-      messages: [
-        { role: "system", content: chunkSystemMessage },
-        { role: "user", content: userMessage }
-      ],
-      temperature: 0.7,
-      max_tokens: 1000,
-      stream: true,
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`DeepSeek API request failed: ${await response.text()}`);
-  }
-
-  const reader = response.body?.getReader();
-  if (!reader) throw new Error('No response body available');
-
-  if (!isFirstChunk) {
-    controller.enqueue(new TextEncoder().encode('\n\nContinuing with additional information...\n\n'));
-  }
-
-  await handleStreamingResponse(reader, controller);
-}
-
 export async function POST(req: Request) {
   const { messages, projectDetails, deepDive = false, model, temperature, max_tokens, stream = false } = await req.json()
 
@@ -215,6 +107,11 @@ export async function POST(req: Request) {
     // Get user's latest message
     const userMessage = messages[messages.length - 1];
     console.log('User query:', userMessage.content);
+
+    // Initialize OpenAI client
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY
+    });
 
     // Prepare system message based on mode
     let systemMessage = '';
@@ -243,85 +140,59 @@ export async function POST(req: Request) {
 Project Details: ${projectDetails || 'No project details available'}
 
 Previous Analyses:
-${memoryContext}`;
+${memoryContext}
 
-                  // Split sources into chunks and process each chunk
-                  const sourceChunks = splitSourcesIntoChunks(relevantSources);
-                  
-                  for (let i = 0; i < sourceChunks.length; i++) {
-                    await processSourceChunk(
-                      sourceChunks[i],
-                      systemMessage,
-                      userMessage.content,
-                      controller,
-                      i === 0,
-                      i === sourceChunks.length - 1
-                    );
-                  }
+I have found relevant information in the interview transcripts. Here are the excerpts:
+
+${relevantSources.map(source => 
+  `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || 'No content available'}`
+).join('\n\n')}
+
+Analyze these interview excerpts carefully and provide a detailed response to the user's question. Focus on:
+1. Understanding the context and relationships between different pieces of information
+2. Drawing meaningful connections and insights
+3. Quoting relevant parts of the sources to support your points
+4. Providing a coherent and complete analysis
+
+If you find relevant information in the sources, incorporate it into your response and explain its significance. If you don't find a direct answer, explain what you can infer from the available information.`;
                 } else {
                   console.log('No relevant sources found');
                   systemMessage = `${AI_CONFIG.systemPrompt}
 
 I've searched the interview transcripts but couldn't find any relevant information about that specific topic. Let me know if you'd like to know about something else from the interviews.`;
-
-                  const response = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${process.env.DEEPINFRA_TOKEN}`,
-                    },
-                    body: JSON.stringify({
-                      model: "deepseek-ai/DeepSeek-V3",
-                      messages: [
-                        { role: "system", content: systemMessage },
-                        { role: "user", content: userMessage.content }
-                      ],
-                      temperature: temperature || AI_CONFIG.temperature,
-                      max_tokens: max_tokens || AI_CONFIG.max_tokens,
-                      stream: true,
-                    }),
-                  });
-
-                  if (!response.ok) {
-                    throw new Error(`DeepSeek API request failed: ${await response.text()}`);
-                  }
-
-                  const reader = response.body?.getReader();
-                  if (!reader) throw new Error('No response body available');
-
-                  await handleStreamingResponse(reader, controller);
                 }
               } else {
                 systemMessage = `${AI_CONFIG.systemPrompt}
 
 Let me help you with your question. Note that I'm not currently using the interview transcripts. If you'd like me to check the transcripts, please enable the "Use sources" option.`;
+              }
 
-                const response = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
-                  method: 'POST',
-                  headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${process.env.DEEPINFRA_TOKEN}`,
-                  },
-                  body: JSON.stringify({
-                    model: "deepseek-ai/DeepSeek-V3",
-                    messages: [
-                      { role: "system", content: systemMessage },
-                      { role: "user", content: userMessage.content }
-                    ],
-                    temperature: temperature || AI_CONFIG.temperature,
-                    max_tokens: max_tokens || AI_CONFIG.max_tokens,
-                    stream: true,
-                  }),
-                });
+              console.log('System message prepared:', {
+                length: systemMessage.length,
+                includesSources: relevantSources.length > 0,
+                sourcesCount: relevantSources.length
+              });
 
-                if (!response.ok) {
-                  throw new Error(`DeepSeek API request failed: ${await response.text()}`);
+              const stream = await openai.chat.completions.create({
+                model: "gpt-4o",
+                messages: [
+                  { role: 'system', content: systemMessage },
+                  ...messages.slice(-5) // Only include last 5 messages to reduce context
+                ],
+                response_format: { type: "text" },
+                temperature: 0.58,
+                max_tokens: 12317,
+                top_p: 1,
+                frequency_penalty: 0,
+                presence_penalty: 0,
+                stream: true
+              });
+
+              for await (const chunk of stream) {
+                const content = chunk.choices[0]?.delta?.content || '';
+                if (content) {
+                  controller.enqueue(new TextEncoder().encode(content));
                 }
-
-                const reader = response.body?.getReader();
-                if (!reader) throw new Error('No response body available');
-
-                await handleStreamingResponse(reader, controller);
               }
 
               controller.close();
@@ -342,30 +213,21 @@ Let me help you with your question. Note that I'm not currently using the interv
     }
 
     // Non-streaming response handling
-    const response = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${process.env.DEEPINFRA_TOKEN}`,
-      },
-      body: JSON.stringify({
-        model: "deepseek-ai/DeepSeek-V3",
-        messages: [
-          { role: "system", content: systemMessage },
-          ...messages
-        ],
-        temperature: temperature || AI_CONFIG.temperature,
-        max_tokens: max_tokens || AI_CONFIG.max_tokens,
-        stream: false,
-      }),
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o",
+      messages: [
+        { role: 'system', content: systemMessage },
+        ...messages
+      ],
+      response_format: { type: "text" },
+      temperature: 0.58,
+      max_tokens: 12317,
+      top_p: 1,
+      frequency_penalty: 0,
+      presence_penalty: 0
     });
 
-    if (!response.ok) {
-      throw new Error(`DeepSeek API request failed: ${await response.text()}`);
-    }
-
-    const data = await response.json();
-    return NextResponse.json(data);
+    return NextResponse.json(completion);
   } catch (error) {
     console.error('Error in chat processing:', error);
     return NextResponse.json({ 
