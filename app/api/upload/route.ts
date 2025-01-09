@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
       throw new Error('PINECONE_INDEX environment variable is not set');
     }
 
-    console.log('Starting file upload process...');
+    console.log('Starting file upload process...', new Date().toISOString());
     const formData = await request.formData()
     const file = formData.get('file') as File | null
 

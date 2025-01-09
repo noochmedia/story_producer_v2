@@ -28,7 +28,9 @@ export async function GET() {
     }
 
     console.log('Initializing Pinecone...');
-    const pinecone = new Pinecone();
+    const pinecone = new Pinecone({
+      apiKey: process.env.PINECONE_API_KEY!
+    });
     console.log('Pinecone initialized');
 
     console.log('Getting Pinecone index...');
@@ -105,7 +107,9 @@ export async function POST(request: NextRequest) {
     }
 
     console.log('Initializing Pinecone...');
-    const pinecone = new Pinecone();
+    const pinecone = new Pinecone({
+      apiKey: process.env.PINECONE_API_KEY!
+    });
     console.log('Pinecone initialized');
 
     console.log('Getting Pinecone index...');
