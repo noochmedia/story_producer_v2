@@ -62,7 +62,9 @@ export async function POST(request: NextRequest) {
 
     // Initialize Pinecone client
     console.log('Initializing Pinecone client...');
-    const pinecone = new Pinecone()
+    const pinecone = new Pinecone({
+      apiKey: process.env.PINECONE_API_KEY!
+    })
     console.log('Pinecone client initialized');
 
     const index = pinecone.index(process.env.PINECONE_INDEX!)

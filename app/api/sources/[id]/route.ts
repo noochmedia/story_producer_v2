@@ -18,7 +18,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 
         // Fetch metadata for the given ID
         const queryResponse = await index.query({
-            vector: Array(384).fill(0), // Dummy vector for fallback
+            vector: Array(1536).fill(0), // Dummy vector for text-embedding-ada-002 dimensions
             topK: 1,
             includeMetadata: true,
             filter: { id: { $eq: decodedId } }
@@ -29,7 +29,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
             return NextResponse.json({ error: 'File not found in Pinecone' }, { status: 404 })
         }
 
-        const fileUrl = queryResponse.matches[0].metadata?.fileUrl
+        const fileUrl = queryResponse.matches[0].metadata?.fileUrl as string
         if (!fileUrl) {
             console.log(`[DELETE] File URL not found in metadata for id: ${decodedId}`)
             return NextResponse.json({ error: 'File metadata missing in Pinecone' }, { status: 404 })

@@ -29,7 +29,9 @@ export async function GET(request: NextRequest) {
         }
 
         console.log('Initializing Pinecone client...');
-        const pinecone = new Pinecone();
+        const pinecone = new Pinecone({
+            apiKey: process.env.PINECONE_API_KEY!
+        });
         console.log('Pinecone client initialized');
 
         const index = pinecone.index(process.env.PINECONE_INDEX);
@@ -60,10 +62,10 @@ export async function GET(request: NextRequest) {
                 }));
 
             console.log('Sources processed successfully, count:', sources.length);
-            return NextResponse.json({ sources })
+            return NextResponse.json(sources)
         } else {
             console.log('No sources found in Pinecone.');
-            return NextResponse.json({ sources: [] })
+            return NextResponse.json([])
         }
     } catch (error) {
         // Enhanced error logging
