@@ -1,12 +1,14 @@
 "use client"
 
-import React, { useState, useEffect, KeyboardEvent, ChangeEvent } from "react"
+import * as React from 'react'
+import { useState, useEffect, KeyboardEvent, ChangeEvent } from "react"
 import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { ScrollArea } from "./ui/scroll-area"
 import { useToast } from "./ui/use-toast"
 import { cn } from "../lib/utils"
 import { Checkbox } from "./ui/checkbox"
+import { useProject } from "../lib/project-context"
 
 interface Message {
   role: 'user' | 'assistant'
@@ -23,9 +25,9 @@ export function AIChat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
-  const [projectDetails, setProjectDetails] = useState<string>('')
   const [useSources, setUseSources] = useState(false)
   const [analysisStage, setAnalysisStage] = useState<string>('')
+  const { projectDetails } = useProject()
   const { toast } = useToast()
 
   // Load chat history on mount
@@ -40,29 +42,6 @@ export function AIChat() {
   useEffect(() => {
     localStorage.setItem('chatHistory', JSON.stringify(messages))
   }, [messages])
-
-  useEffect(() => {
-    // Fetch project details when component mounts
-    const fetchProjectDetails = async () => {
-      try {
-        const response = await fetch('/api/project-details')
-        if (!response.ok) {
-          throw new Error('Failed to fetch project details')
-        }
-        const data = await response.json()
-        setProjectDetails(data.details || '')
-      } catch (error) {
-        console.error('Error fetching project details:', error)
-        toast({
-          title: "Error",
-          description: "Failed to fetch project details",
-          variant: "destructive",
-        })
-      }
-    }
-
-    fetchProjectDetails()
-  }, [toast])
 
   const quickActions: QuickAction[] = [
     {
