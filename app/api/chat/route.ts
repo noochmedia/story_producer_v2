@@ -20,6 +20,40 @@ function getContentPreview(content: any): string {
   return 'No preview available';
 }
 
+function cleanTranscriptContent(content: string): string {
+  // Remove timestamp lines
+  const lines = content.split('\n').filter(line => !line.match(/^\[\d{2}:\d{2}:\d{2}:\d{2}\]/));
+  
+  // Remove empty lines and [Inaudible]
+  return lines
+    .filter(line => line.trim() && !line.includes('Inaudible'))
+    .join('\n')
+    .trim();
+}
+
+function splitSourcesIntoChunks(sources: PineconeMatch[], chunkSize: number = 2): PineconeMatch[][] {
+  const chunks: PineconeMatch[][] = [];
+  for (let i = 0; i < sources.length; i += chunkSize) {
+    chunks.push(sources.slice(i, i + chunkSize));
+  }
+  return chunks;
+}
+
+function processMatch(match: PineconeMatch): PineconeMatch {
+  if (!match.metadata) return match;
+
+  const content = match.metadata.content;
+  if (typeof content !== 'string') return match;
+
+  return {
+    ...match,
+    metadata: {
+      ...match.metadata,
+      content: cleanTranscriptContent(content)
+    }
+  };
+}
+
 async function queryPineconeForContext(query: string, stage: string, controller: ReadableStreamDefaultController) {
   if (!process.env.PINECONE_API_KEY || !process.env.PINECONE_INDEX) {
     throw new Error('Pinecone configuration missing');
@@ -33,14 +67,6 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   
   const index = pinecone.index(process.env.PINECONE_INDEX);
   
-  // First check what's in the index
-  const stats = await index.describeIndexStats();
-  console.log('Index stats:', {
-    totalRecords: stats.totalRecordCount,
-    indexFullness: stats.indexFullness,
-    dimensions: stats.dimension
-  });
-  
   console.log('Generating embedding for context query:', query);
   const queryEmbedding = await generateEmbedding(query);
   
@@ -53,23 +79,26 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   });
 
   console.log('Found matches:', queryResponse.matches.length);
-  queryResponse.matches.forEach((match, i) => {
+  
+  // Process and clean matches
+  const validMatches = queryResponse.matches
+    .filter(match => 
+      match.metadata?.content && 
+      typeof match.metadata.content === 'string' && 
+      match.metadata.content.trim() !== ''
+    )
+    .map(processMatch);
+
+  console.log('Valid matches with content:', validMatches.length);
+  validMatches.forEach((match, i) => {
     console.log(`Match ${i + 1}:`, {
       score: match.score,
       fileName: match.metadata?.fileName,
-      contentPreview: getContentPreview(match.metadata?.content)
+      contentPreview: match.metadata?.content ? getContentPreview(match.metadata.content) : 'No content'
     });
   });
 
-  // Filter out matches with no content
-  const validMatches = queryResponse.matches.filter(match => 
-    match.metadata?.content && 
-    typeof match.metadata.content === 'string' && 
-    match.metadata.content.trim() !== ''
-  );
-
-  console.log('Valid matches with content:', validMatches.length);
-  return validMatches as PineconeMatch[];
+  return validMatches;
 }
 
 async function handleStreamingResponse(reader: ReadableStreamDefaultReader<Uint8Array>, controller: ReadableStreamDefaultController) {
@@ -120,6 +149,59 @@ async function handleStreamingResponse(reader: ReadableStreamDefaultReader<Uint8
   }
 }
 
+async function processSourceChunk(
+  chunk: PineconeMatch[],
+  systemPrompt: string,
+  userMessage: string,
+  controller: ReadableStreamDefaultController,
+  isFirstChunk: boolean,
+  isLastChunk: boolean
+) {
+  const chunkSystemMessage = `${systemPrompt}
+
+Here are some relevant excerpts from the interviews:
+
+${chunk.map(source => 
+  `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || 'No content available'}`
+).join('\n\n')}
+
+${isFirstChunk ? 'Begin answering the user\'s question. Be specific and quote directly from the sources when possible.' : 
+  'Continue the previous response with information from these additional sources.'}
+${isLastChunk ? '\n\nThis is all the available information. Please conclude your response.' : 
+  '\n\nThere is more information to come in the next part.'}`;
+
+  const response = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.DEEPINFRA_TOKEN}`,
+    },
+    body: JSON.stringify({
+      model: "deepseek-ai/DeepSeek-V3",
+      messages: [
+        { role: "system", content: chunkSystemMessage },
+        { role: "user", content: userMessage }
+      ],
+      temperature: 0.7,
+      max_tokens: 1000,
+      stream: true,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`DeepSeek API request failed: ${await response.text()}`);
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) throw new Error('No response body available');
+
+  if (!isFirstChunk) {
+    controller.enqueue(new TextEncoder().encode('\n\nContinuing with additional information...\n\n'));
+  }
+
+  await handleStreamingResponse(reader, controller);
+}
+
 export async function POST(req: Request) {
   const { messages, projectDetails, deepDive = false, model, temperature, max_tokens, stream = false } = await req.json()
 
@@ -161,84 +243,28 @@ export async function POST(req: Request) {
 Project Details: ${projectDetails || 'No project details available'}
 
 Previous Analyses:
-${memoryContext}
+${memoryContext}`;
 
-Available Sources:
-${relevantSources.map(source => 
-  `[Source: ${source.metadata?.fileName || 'Unknown'}]\n${source.metadata?.content || 'No content available'}`
-).join('\n\n')}
-
-Based on these sources, provide a detailed response to the user's query. You MUST use the information from the sources to answer the query. If you find relevant information, incorporate it into your response. Be specific and reference the sources when possible.`;
+                  // Split sources into chunks and process each chunk
+                  const sourceChunks = splitSourcesIntoChunks(relevantSources);
+                  
+                  for (let i = 0; i < sourceChunks.length; i++) {
+                    await processSourceChunk(
+                      sourceChunks[i],
+                      systemMessage,
+                      userMessage.content,
+                      controller,
+                      i === 0,
+                      i === sourceChunks.length - 1
+                    );
+                  }
                 } else {
                   console.log('No relevant sources found');
                   systemMessage = `${AI_CONFIG.systemPrompt}
 
-Project Details: ${projectDetails || 'No project details available'}
+I've searched the interview transcripts but couldn't find any relevant information about that specific topic. Let me know if you'd like to know about something else from the interviews.`;
 
-Previous Analyses:
-${memoryContext}
-
-Note: I don't have any specific information about that in my sources, but I'll help based on our conversation and general knowledge.`;
-                }
-              } else {
-                systemMessage = `${AI_CONFIG.systemPrompt}
-
-Project Details: ${projectDetails || 'No project details available'}
-
-Previous Analyses:
-${memoryContext}`;
-              }
-
-              console.log('System message prepared:', {
-                length: systemMessage.length,
-                includesSources: relevantSources.length > 0,
-                sourcesCount: relevantSources.length
-              });
-
-              // Make request to DeepSeek
-              const response = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${process.env.DEEPINFRA_TOKEN}`,
-                },
-                body: JSON.stringify({
-                  model: "deepseek-ai/DeepSeek-V3",
-                  messages: [
-                    { role: "system", content: systemMessage },
-                    ...messages
-                  ],
-                  temperature: temperature || AI_CONFIG.temperature,
-                  max_tokens: max_tokens || AI_CONFIG.max_tokens,
-                  stream: true,
-                }),
-              });
-
-              if (!response.ok) {
-                const errorText = await response.text();
-                console.error('DeepSeek API error:', errorText);
-                
-                // If token limit exceeded, try with reduced context
-                if (errorText.includes('maximum context length')) {
-                  controller.enqueue(new TextEncoder().encode('Let me try with a more focused approach...\n\n'));
-                  
-                  // Take only the most relevant sources
-                  const topSources = relevantSources
-                    .sort((a, b) => (b.score || 0) - (a.score || 0))
-                    .slice(0, 3);
-
-                  const reducedSystemMessage = `${AI_CONFIG.systemPrompt}
-
-Project Details: ${projectDetails || 'No project details available'}
-
-Most Relevant Sources:
-${topSources.map(source => 
-  `[Source: ${source.metadata?.fileName || 'Unknown'}]\n${source.metadata?.content || 'No content available'}`
-).join('\n\n')}
-
-Based on these sources, provide a concise response to the user's query. You MUST use the information from the sources to answer the query.`;
-
-                  const retryResponse = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
+                  const response = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
                     method: 'POST',
                     headers: {
                       'Content-Type': 'application/json',
@@ -247,8 +273,8 @@ Based on these sources, provide a concise response to the user's query. You MUST
                     body: JSON.stringify({
                       model: "deepseek-ai/DeepSeek-V3",
                       messages: [
-                        { role: "system", content: reducedSystemMessage },
-                        messages[messages.length - 1] // Just use the last message
+                        { role: "system", content: systemMessage },
+                        { role: "user", content: userMessage.content }
                       ],
                       temperature: temperature || AI_CONFIG.temperature,
                       max_tokens: max_tokens || AI_CONFIG.max_tokens,
@@ -256,18 +282,42 @@ Based on these sources, provide a concise response to the user's query. You MUST
                     }),
                   });
 
-                  if (!retryResponse.ok) {
-                    throw new Error(`Retry failed: ${await retryResponse.text()}`);
+                  if (!response.ok) {
+                    throw new Error(`DeepSeek API request failed: ${await response.text()}`);
                   }
 
-                  const retryReader = retryResponse.body?.getReader();
-                  if (!retryReader) throw new Error('No response body available');
+                  const reader = response.body?.getReader();
+                  if (!reader) throw new Error('No response body available');
 
-                  await handleStreamingResponse(retryReader, controller);
-                } else {
-                  throw new Error(`DeepSeek API request failed: ${errorText}`);
+                  await handleStreamingResponse(reader, controller);
                 }
               } else {
+                systemMessage = `${AI_CONFIG.systemPrompt}
+
+Let me help you with your question. Note that I'm not currently using the interview transcripts. If you'd like me to check the transcripts, please enable the "Use sources" option.`;
+
+                const response = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.DEEPINFRA_TOKEN}`,
+                  },
+                  body: JSON.stringify({
+                    model: "deepseek-ai/DeepSeek-V3",
+                    messages: [
+                      { role: "system", content: systemMessage },
+                      { role: "user", content: userMessage.content }
+                    ],
+                    temperature: temperature || AI_CONFIG.temperature,
+                    max_tokens: max_tokens || AI_CONFIG.max_tokens,
+                    stream: true,
+                  }),
+                });
+
+                if (!response.ok) {
+                  throw new Error(`DeepSeek API request failed: ${await response.text()}`);
+                }
+
                 const reader = response.body?.getReader();
                 if (!reader) throw new Error('No response body available');
 
