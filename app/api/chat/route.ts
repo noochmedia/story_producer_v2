@@ -40,32 +40,6 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   return queryResponse.matches as PineconeMatch[];
 }
 
-async function streamResponse(response: Response, controller: ReadableStreamDefaultController) {
-  const reader = response.body?.getReader();
-  const decoder = new TextDecoder();
-  
-  if (!reader) {
-    throw new Error('No response body available');
-  }
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) {
-      console.log('Stream complete');
-      break;
-    }
-
-    const chunk = decoder.decode(value);
-    controller.enqueue(new TextEncoder().encode(chunk));
-  }
-}
-
-function getSourceFileNames(sources: PineconeMatch[]): string[] {
-  return sources
-    .map(s => s.metadata?.fileName)
-    .filter((name): name is string => typeof name === 'string');
-}
-
 export async function POST(req: Request) {
   const { messages, projectDetails, deepDive = false, model, temperature, max_tokens, stream = false } = await req.json()
 
@@ -79,6 +53,14 @@ export async function POST(req: Request) {
     const userMessage = messages[messages.length - 1];
     console.log('User query:', userMessage.content);
 
+    // Check if this is a special analysis request
+    const isSpecialAnalysis = userMessage.content.toLowerCase().includes('character brief') ||
+                             userMessage.content.toLowerCase().includes('relationship map') ||
+                             userMessage.content.toLowerCase().includes('timeline');
+
+    // Force deep dive mode for special analyses
+    const shouldDeepDive = deepDive || isSpecialAnalysis;
+
     // Prepare system message based on mode
     let systemMessage = '';
     let relevantSources: PineconeMatch[] = [];
@@ -89,15 +71,15 @@ export async function POST(req: Request) {
           async start(controller) {
             try {
               // First check AI's memory
-              controller.enqueue(new TextEncoder().encode('[STAGE:Checking previous analyses]\n'));
               const relevantMemories = await queryMemory(userMessage.content);
               const memoryContext = formatMemoryForAI(relevantMemories);
 
-              if (deepDive) {
+              if (shouldDeepDive) {
+                controller.enqueue(new TextEncoder().encode('[STAGE:Searching relevant information]\n'));
                 // Get initial context from Pinecone
                 relevantSources = await queryPineconeForContext(
                   userMessage.content,
-                  'Searching source material',
+                  'Analyzing sources',
                   controller
                 );
 
@@ -107,9 +89,6 @@ Project Details: ${projectDetails || 'No project details available'}
 
 Previous Analyses:
 ${memoryContext}
-
-[DEEP DIVE MODE]
-I will analyze all available sources thoroughly to provide comprehensive insights.
 
 Available Sources:
 ${relevantSources.map(source => 
@@ -121,13 +100,8 @@ ${relevantSources.map(source =>
 Project Details: ${projectDetails || 'No project details available'}
 
 Previous Analyses:
-${memoryContext}
-
-[NORMAL MODE]
-I will provide assistance based on our conversation and any previous analyses.`;
+${memoryContext}`;
               }
-
-              controller.enqueue(new TextEncoder().encode('[STAGE:Analyzing information]\n'));
 
               // Make request to DeepSeek
               const response = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
@@ -153,54 +127,53 @@ I will provide assistance based on our conversation and any previous analyses.`;
                 throw new Error(`DeepSeek API request failed: ${errorText}`);
               }
 
-              // Collect the AI's response for potential storage
-              let aiResponse = '';
-              const responseReader = response.body?.getReader();
+              // Stream the response
+              const reader = response.body?.getReader();
               const decoder = new TextDecoder();
 
-              if (responseReader) {
-                controller.enqueue(new TextEncoder().encode('[STAGE:Generating response]\n'));
-                
-                while (true) {
-                  const { done, value } = await responseReader.read();
-                  if (done) break;
+              if (!reader) {
+                throw new Error('No response body available');
+              }
 
-                  const chunk = decoder.decode(value);
+              let aiResponse = '';
+
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                const chunk = decoder.decode(value);
+                
+                // Only process actual content, not debug info
+                if (!chunk.includes('data:')) {
                   aiResponse += chunk;
                   controller.enqueue(new TextEncoder().encode(chunk));
                 }
+              }
 
-                // Store the AI's response as a memory if it's a special analysis
-                const isSpecialAnalysis = userMessage.content.toLowerCase().includes('character brief') ||
-                                        userMessage.content.toLowerCase().includes('relationship map') ||
-                                        userMessage.content.toLowerCase().includes('timeline');
-
-                if (isSpecialAnalysis && aiResponse) {
-                  controller.enqueue(new TextEncoder().encode('[STAGE:Saving analysis]\n'));
-                  
-                  let analysisType: 'character_brief' | 'relationship_map' | 'timeline';
-                  let title = '';
-                  
-                  if (userMessage.content.toLowerCase().includes('character brief')) {
-                    analysisType = 'character_brief';
-                    const characterName = userMessage.content.match(/for\s+(\w+)/i)?.[1] || 'Unknown Character';
-                    title = `Character Brief: ${characterName}`;
-                  } else if (userMessage.content.toLowerCase().includes('relationship map')) {
-                    analysisType = 'relationship_map';
-                    title = 'Character Relationship Map';
-                  } else {
-                    analysisType = 'timeline';
-                    title = 'Story Timeline';
-                  }
-
-                  await storeMemory({
-                    type: analysisType,
-                    title,
-                    content: aiResponse,
-                    tags: [analysisType],
-                    relatedSources: getSourceFileNames(relevantSources)
-                  });
+              // Store special analyses in memory
+              if (isSpecialAnalysis && aiResponse) {
+                let analysisType: 'character_brief' | 'relationship_map' | 'timeline';
+                let title = '';
+                
+                if (userMessage.content.toLowerCase().includes('character brief')) {
+                  analysisType = 'character_brief';
+                  const characterName = userMessage.content.match(/brief\s+(?:for|on)\s+(\w+)/i)?.[1] || 'Unknown Character';
+                  title = `Character Brief: ${characterName}`;
+                } else if (userMessage.content.toLowerCase().includes('relationship map')) {
+                  analysisType = 'relationship_map';
+                  title = 'Character Relationship Map';
+                } else {
+                  analysisType = 'timeline';
+                  title = 'Story Timeline';
                 }
+
+                await storeMemory({
+                  type: analysisType,
+                  title,
+                  content: aiResponse,
+                  tags: [analysisType],
+                  relatedSources: getSourceFileNames(relevantSources)
+                });
               }
 
               controller.close();
@@ -252,4 +225,10 @@ I will provide assistance based on our conversation and any previous analyses.`;
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
+}
+
+function getSourceFileNames(sources: PineconeMatch[]): string[] {
+  return sources
+    .map(s => s.metadata?.fileName)
+    .filter((name): name is string => typeof name === 'string');
 }

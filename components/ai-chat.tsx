@@ -55,11 +55,11 @@ export function AIChat() {
       label: "Character Brief",
       description: "Generate a detailed character profile",
       action: () => {
-        setInput("Generate a character brief for [character name]")
+        setInput("Who would you like a character brief on?")
         setIsDeepDiveMode(true)
         toast({
           title: "Character Brief",
-          description: "Enter the character name in the prompt",
+          description: "Enter a character's name",
         })
       }
     },
@@ -119,7 +119,7 @@ export function AIChat() {
         throw new Error('No response body available')
       }
 
-      let accumulatedContent = useDeepDive ? 'Analyzing sources...\n\n' : ''
+      let accumulatedContent = ''
 
       while (true) {
         const { done, value } = await reader.read()
@@ -176,32 +176,6 @@ export function AIChat() {
 
   return (
     <div className="h-[600px] flex flex-col">
-      {/* Mode Toggle */}
-      <div className="grid grid-cols-2 gap-2 mb-4">
-        <Button
-          onClick={() => setIsDeepDiveMode(false)}
-          variant={isDeepDiveMode ? "outline" : "secondary"}
-          className={cn(
-            "w-full",
-            !isDeepDiveMode && "border-2 border-primary"
-          )}
-          disabled={isLoading}
-        >
-          Normal Mode
-        </Button>
-        <Button
-          onClick={() => setIsDeepDiveMode(true)}
-          variant={isDeepDiveMode ? "secondary" : "outline"}
-          className={cn(
-            "w-full",
-            isDeepDiveMode && "border-2 border-primary"
-          )}
-          disabled={isLoading}
-        >
-          Deep Dive Mode
-        </Button>
-      </div>
-
       <ScrollArea className="flex-grow mb-4 p-4 border rounded">
         {messages.map((message, index) => (
           <div key={index} className={`mb-2 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
@@ -233,16 +207,27 @@ export function AIChat() {
           ))}
         </div>
 
-        {/* Input Area */}
+        {/* Input Area with Mode Toggle */}
         <div className="flex gap-2">
           <Input
             value={input}
             onChange={handleInputChange}
-            placeholder={isDeepDiveMode ? "Ask a detailed question about the sources..." : "Type your message..."}
+            placeholder="Start chatting, ask a question, or choose an option above"
             className="flex-grow"
             onKeyPress={handleKeyPress}
             disabled={isLoading}
           />
+          <Button
+            onClick={() => setIsDeepDiveMode(!isDeepDiveMode)}
+            variant={isDeepDiveMode ? "secondary" : "outline"}
+            className={cn(
+              "min-w-[100px]",
+              isDeepDiveMode && "border-2 border-primary"
+            )}
+            disabled={isLoading}
+          >
+            {isDeepDiveMode ? "Deep Dive" : "Normal"}
+          </Button>
           <Button 
             onClick={() => sendMessage(isDeepDiveMode)} 
             disabled={isLoading}
