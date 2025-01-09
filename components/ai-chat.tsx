@@ -133,6 +133,7 @@ export function AIChat() {
       }
 
       let accumulatedContent = ''
+      let responseStarted = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -148,17 +149,32 @@ export function AIChat() {
           }
         } else if (!chunk.includes('data:')) {
           accumulatedContent += chunk
+          responseStarted = true
+        } else if (chunk.includes('data:') && !chunk.includes('[DONE]')) {
+          try {
+            const data = JSON.parse(chunk.replace('data:', '').trim())
+            const text = data.choices?.[0]?.delta?.content || 
+                        data.choices?.[0]?.text || ''
+            if (text) {
+              accumulatedContent += text
+              responseStarted = true
+            }
+          } catch (e) {
+            console.error('Error parsing chunk:', e)
+          }
         }
 
         // Update the last message with the accumulated content
-        setMessages(prev => {
-          const newMessages = [...prev]
-          newMessages[newMessages.length - 1] = {
-            role: 'assistant',
-            content: accumulatedContent.trim() || 'Thinking...'
-          }
-          return newMessages
-        })
+        if (responseStarted) {
+          setMessages(prev => {
+            const newMessages = [...prev]
+            newMessages[newMessages.length - 1] = {
+              role: 'assistant',
+              content: accumulatedContent.trim() || 'Thinking...'
+            }
+            return newMessages
+          })
+        }
       }
     } catch (error) {
       console.error('Error getting AI response:', error)
@@ -192,13 +208,17 @@ export function AIChat() {
       <ScrollArea className="flex-grow mb-4 p-4 border rounded">
         {messages.map((message, index) => (
           <div key={index} className={`mb-2 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
-            <span className={`inline-block p-2 rounded-lg ${message.role === 'user' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
+            <span className={`inline-block p-2 rounded-lg ${
+              message.role === 'user' 
+                ? 'bg-primary text-primary-foreground' 
+                : 'bg-muted text-foreground'
+            }`}>
               {message.content}
             </span>
           </div>
         ))}
         {isLoading && analysisStage && (
-          <div className="text-sm text-muted-foreground animate-pulse">
+          <div className="text-sm text-foreground animate-pulse">
             {analysisStage}...
           </div>
         )}
@@ -206,7 +226,7 @@ export function AIChat() {
 
       <div className="flex flex-col gap-2">
         {/* Quick Action Buttons */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-2 items-center">
           {quickActions.map((action, index) => (
             <Button
               key={index}
@@ -218,55 +238,36 @@ export function AIChat() {
               {action.label}
             </Button>
           ))}
+          <Button
+            onClick={() => setIsDeepDiveMode(!isDeepDiveMode)}
+            variant={isDeepDiveMode ? "secondary" : "outline"}
+            size="sm"
+            className={cn(
+              isDeepDiveMode && "border-primary"
+            )}
+            disabled={isLoading}
+          >
+            {isDeepDiveMode ? "Deep Dive" : "Normal"}
+          </Button>
         </div>
 
         {/* Input Area */}
-        <div className="flex flex-col gap-2">
-          {/* Mode Toggle */}
-          <div className="flex rounded-lg border overflow-hidden">
-            <button
-              onClick={() => setIsDeepDiveMode(false)}
-              className={cn(
-                "flex-1 px-4 py-2 text-sm font-medium transition-colors",
-                !isDeepDiveMode 
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-muted"
-              )}
-              disabled={isLoading}
-            >
-              Normal
-            </button>
-            <button
-              onClick={() => setIsDeepDiveMode(true)}
-              className={cn(
-                "flex-1 px-4 py-2 text-sm font-medium transition-colors",
-                isDeepDiveMode 
-                  ? "bg-primary text-primary-foreground"
-                  : "hover:bg-muted"
-              )}
-              disabled={isLoading}
-            >
-              Deep Dive
-            </button>
-          </div>
-
-          <div className="flex gap-2">
-            <Input
-              value={input}
-              onChange={handleInputChange}
-              placeholder="Start chatting, ask a question, or choose an option above"
-              className="flex-grow"
-              onKeyPress={handleKeyPress}
-              disabled={isLoading}
-            />
-            <Button 
-              onClick={() => sendMessage(isDeepDiveMode)} 
-              disabled={isLoading}
-              className="min-w-[80px]"
-            >
-              {isLoading ? 'Thinking...' : 'Send'}
-            </Button>
-          </div>
+        <div className="flex gap-2">
+          <Input
+            value={input}
+            onChange={handleInputChange}
+            placeholder="Start chatting, ask a question, or choose an option above"
+            className="flex-grow"
+            onKeyPress={handleKeyPress}
+            disabled={isLoading}
+          />
+          <Button 
+            onClick={() => sendMessage(isDeepDiveMode)} 
+            disabled={isLoading}
+            className="min-w-[80px]"
+          >
+            {isLoading ? 'Thinking...' : 'Send'}
+          </Button>
         </div>
       </div>
     </div>

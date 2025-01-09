@@ -40,6 +40,47 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   return queryResponse.matches as PineconeMatch[];
 }
 
+async function handleStreamingResponse(reader: ReadableStreamDefaultReader<Uint8Array>, controller: ReadableStreamDefaultController) {
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop() || ''; // Keep the last partial line in the buffer
+
+    for (const line of lines) {
+      if (line.trim() === '') continue;
+
+      if (line.includes('data: [DONE]')) continue;
+
+      if (line.startsWith('data: ')) {
+        try {
+          const data = JSON.parse(line.slice(5));
+          const content = data.choices?.[0]?.delta?.content || 
+                         data.choices?.[0]?.text || '';
+          if (content) {
+            controller.enqueue(new TextEncoder().encode(content));
+          }
+        } catch (e) {
+          console.error('Error parsing line:', line, e);
+        }
+      } else if (!line.includes('data:')) {
+        // Direct text content
+        controller.enqueue(new TextEncoder().encode(line));
+      }
+    }
+  }
+
+  // Handle any remaining content in the buffer
+  if (buffer.trim() && !buffer.includes('data:')) {
+    controller.enqueue(new TextEncoder().encode(buffer));
+  }
+}
+
 export async function POST(req: Request) {
   const { messages, projectDetails, deepDive = false, model, temperature, max_tokens, stream = false } = await req.json()
 
@@ -75,11 +116,10 @@ export async function POST(req: Request) {
               const memoryContext = formatMemoryForAI(relevantMemories);
 
               if (shouldDeepDive) {
-                controller.enqueue(new TextEncoder().encode('[STAGE:Searching relevant information]\n'));
                 // Get initial context from Pinecone
                 relevantSources = await queryPineconeForContext(
                   userMessage.content,
-                  'Analyzing sources',
+                  'Searching relevant information',
                   controller
                 );
 
@@ -124,56 +164,53 @@ ${memoryContext}`;
 
               if (!response.ok) {
                 const errorText = await response.text();
-                throw new Error(`DeepSeek API request failed: ${errorText}`);
-              }
-
-              // Stream the response
-              const reader = response.body?.getReader();
-              const decoder = new TextDecoder();
-
-              if (!reader) {
-                throw new Error('No response body available');
-              }
-
-              let aiResponse = '';
-
-              while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value);
+                console.error('DeepSeek API error:', errorText);
                 
-                // Only process actual content, not debug info
-                if (!chunk.includes('data:')) {
-                  aiResponse += chunk;
-                  controller.enqueue(new TextEncoder().encode(chunk));
-                }
-              }
+                // If token limit exceeded, try with reduced context
+                if (errorText.includes('maximum context length')) {
+                  controller.enqueue(new TextEncoder().encode('Let me try with a more focused approach...\n\n'));
+                  
+                  // Reduce system message size
+                  const reducedSystemMessage = `${AI_CONFIG.systemPrompt}
 
-              // Store special analyses in memory
-              if (isSpecialAnalysis && aiResponse) {
-                let analysisType: 'character_brief' | 'relationship_map' | 'timeline';
-                let title = '';
-                
-                if (userMessage.content.toLowerCase().includes('character brief')) {
-                  analysisType = 'character_brief';
-                  const characterName = userMessage.content.match(/brief\s+(?:for|on)\s+(\w+)/i)?.[1] || 'Unknown Character';
-                  title = `Character Brief: ${characterName}`;
-                } else if (userMessage.content.toLowerCase().includes('relationship map')) {
-                  analysisType = 'relationship_map';
-                  title = 'Character Relationship Map';
+Project Details: ${projectDetails || 'No project details available'}
+
+${shouldDeepDive ? 'Using most relevant source information...' : ''}`;
+
+                  const retryResponse = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
+                    method: 'POST',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      'Authorization': `Bearer ${process.env.DEEPINFRA_TOKEN}`,
+                    },
+                    body: JSON.stringify({
+                      model: "deepseek-ai/DeepSeek-V3",
+                      messages: [
+                        { role: "system", content: reducedSystemMessage },
+                        messages[messages.length - 1] // Just use the last message
+                      ],
+                      temperature: temperature || AI_CONFIG.temperature,
+                      max_tokens: max_tokens || AI_CONFIG.max_tokens,
+                      stream: true,
+                    }),
+                  });
+
+                  if (!retryResponse.ok) {
+                    throw new Error(`Retry failed: ${await retryResponse.text()}`);
+                  }
+
+                  const retryReader = retryResponse.body?.getReader();
+                  if (!retryReader) throw new Error('No response body available');
+
+                  await handleStreamingResponse(retryReader, controller);
                 } else {
-                  analysisType = 'timeline';
-                  title = 'Story Timeline';
+                  throw new Error(`DeepSeek API request failed: ${errorText}`);
                 }
+              } else {
+                const reader = response.body?.getReader();
+                if (!reader) throw new Error('No response body available');
 
-                await storeMemory({
-                  type: analysisType,
-                  title,
-                  content: aiResponse,
-                  tags: [analysisType],
-                  relatedSources: getSourceFileNames(relevantSources)
-                });
+                await handleStreamingResponse(reader, controller);
               }
 
               controller.close();
@@ -225,10 +262,4 @@ ${memoryContext}`;
       details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 });
   }
-}
-
-function getSourceFileNames(sources: PineconeMatch[]): string[] {
-  return sources
-    .map(s => s.metadata?.fileName)
-    .filter((name): name is string => typeof name === 'string');
 }
