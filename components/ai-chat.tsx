@@ -27,6 +27,19 @@ export function AIChat() {
   const [analysisStage, setAnalysisStage] = useState<string>('')
   const { toast } = useToast()
 
+  // Load chat history on mount
+  useEffect(() => {
+    const savedMessages = localStorage.getItem('chatHistory')
+    if (savedMessages) {
+      setMessages(JSON.parse(savedMessages))
+    }
+  }, [])
+
+  // Save chat history on update
+  useEffect(() => {
+    localStorage.setItem('chatHistory', JSON.stringify(messages))
+  }, [messages])
+
   useEffect(() => {
     // Fetch project details when component mounts
     const fetchProjectDetails = async () => {
@@ -142,7 +155,7 @@ export function AIChat() {
           const newMessages = [...prev]
           newMessages[newMessages.length - 1] = {
             role: 'assistant',
-            content: accumulatedContent.trim()
+            content: accumulatedContent.trim() || 'Thinking...'
           }
           return newMessages
         })
@@ -207,34 +220,53 @@ export function AIChat() {
           ))}
         </div>
 
-        {/* Input Area with Mode Toggle */}
-        <div className="flex gap-2">
-          <Input
-            value={input}
-            onChange={handleInputChange}
-            placeholder="Start chatting, ask a question, or choose an option above"
-            className="flex-grow"
-            onKeyPress={handleKeyPress}
-            disabled={isLoading}
-          />
-          <Button
-            onClick={() => setIsDeepDiveMode(!isDeepDiveMode)}
-            variant={isDeepDiveMode ? "secondary" : "outline"}
-            className={cn(
-              "min-w-[100px]",
-              isDeepDiveMode && "border-2 border-primary"
-            )}
-            disabled={isLoading}
-          >
-            {isDeepDiveMode ? "Deep Dive" : "Normal"}
-          </Button>
-          <Button 
-            onClick={() => sendMessage(isDeepDiveMode)} 
-            disabled={isLoading}
-            className="min-w-[80px]"
-          >
-            {isLoading ? 'Thinking...' : 'Send'}
-          </Button>
+        {/* Input Area */}
+        <div className="flex flex-col gap-2">
+          {/* Mode Toggle */}
+          <div className="flex rounded-lg border overflow-hidden">
+            <button
+              onClick={() => setIsDeepDiveMode(false)}
+              className={cn(
+                "flex-1 px-4 py-2 text-sm font-medium transition-colors",
+                !isDeepDiveMode 
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-muted"
+              )}
+              disabled={isLoading}
+            >
+              Normal
+            </button>
+            <button
+              onClick={() => setIsDeepDiveMode(true)}
+              className={cn(
+                "flex-1 px-4 py-2 text-sm font-medium transition-colors",
+                isDeepDiveMode 
+                  ? "bg-primary text-primary-foreground"
+                  : "hover:bg-muted"
+              )}
+              disabled={isLoading}
+            >
+              Deep Dive
+            </button>
+          </div>
+
+          <div className="flex gap-2">
+            <Input
+              value={input}
+              onChange={handleInputChange}
+              placeholder="Start chatting, ask a question, or choose an option above"
+              className="flex-grow"
+              onKeyPress={handleKeyPress}
+              disabled={isLoading}
+            />
+            <Button 
+              onClick={() => sendMessage(isDeepDiveMode)} 
+              disabled={isLoading}
+              className="min-w-[80px]"
+            >
+              {isLoading ? 'Thinking...' : 'Send'}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
