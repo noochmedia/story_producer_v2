@@ -43,7 +43,9 @@ export async function getAIResponse(messages: any[], projectDetails: string) {
       }
 
       // Initialize Pinecone client
-      const pinecone = new Pinecone();
+      const pinecone = new Pinecone({
+        apiKey: process.env.PINECONE_API_KEY!
+      });
       
       const index = pinecone.index(process.env.PINECONE_INDEX);
       

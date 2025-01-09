@@ -1,10 +1,10 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { useToast } from "@/components/ui/use-toast"
+import React, { useState, useEffect, KeyboardEvent, ChangeEvent } from "react"
+import { Button } from "./ui/button"
+import { Input } from "./ui/input"
+import { ScrollArea } from "./ui/scroll-area"
+import { useToast } from "./ui/use-toast"
 
 interface Message {
   role: 'user' | 'assistant'
@@ -15,7 +15,31 @@ export function AIChat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [projectDetails, setProjectDetails] = useState<string>('')
   const { toast } = useToast()
+
+  useEffect(() => {
+    // Fetch project details when component mounts
+    const fetchProjectDetails = async () => {
+      try {
+        const response = await fetch('/api/project-details')
+        if (!response.ok) {
+          throw new Error('Failed to fetch project details')
+        }
+        const data = await response.json()
+        setProjectDetails(data.details || '')
+      } catch (error) {
+        console.error('Error fetching project details:', error)
+        toast({
+          title: "Error",
+          description: "Failed to fetch project details",
+          variant: "destructive",
+        })
+      }
+    }
+
+    fetchProjectDetails()
+  }, [toast])
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return
@@ -35,6 +59,7 @@ export function AIChat() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [...messages, userMessage],
+          projectDetails,
           stream: true
         })
       })
@@ -84,6 +109,16 @@ export function AIChat() {
     }
   }
 
+  const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter') {
+      sendMessage()
+    }
+  }
+
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    setInput(e.target.value)
+  }
+
   return (
     <div className="h-[400px] flex flex-col">
       <ScrollArea className="flex-grow mb-4 p-4 border rounded">
@@ -98,10 +133,10 @@ export function AIChat() {
       <div className="flex">
         <Input
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={handleInputChange}
           placeholder="Type your message..."
           className="flex-grow mr-2"
-          onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+          onKeyPress={handleKeyPress}
           disabled={isLoading}
         />
         <Button onClick={sendMessage} disabled={isLoading}>
