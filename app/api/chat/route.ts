@@ -13,6 +13,13 @@ interface SourceMetadata {
 
 type PineconeMatch = ScoredPineconeRecord<SourceMetadata>;
 
+function getContentPreview(content: any): string {
+  if (typeof content === 'string') {
+    return content.length > 100 ? content.substring(0, 100) + '...' : content;
+  }
+  return 'No preview available';
+}
+
 async function queryPineconeForContext(query: string, stage: string, controller: ReadableStreamDefaultController) {
   if (!process.env.PINECONE_API_KEY || !process.env.PINECONE_INDEX) {
     throw new Error('Pinecone configuration missing');
@@ -26,7 +33,7 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   
   const index = pinecone.index(process.env.PINECONE_INDEX);
   
-  console.log('Generating embedding for context query...');
+  console.log('Generating embedding for context query:', query);
   const queryEmbedding = await generateEmbedding(query);
   
   console.log('Querying Pinecone for relevant context...');
@@ -37,12 +44,28 @@ async function queryPineconeForContext(query: string, stage: string, controller:
     filter: { type: { $eq: 'source' } }
   });
 
-  return queryResponse.matches as PineconeMatch[];
+  console.log('Found matches:', queryResponse.matches.length);
+  queryResponse.matches.forEach((match, i) => {
+    console.log(`Match ${i + 1}:`, {
+      score: match.score,
+      fileName: match.metadata?.fileName,
+      contentPreview: getContentPreview(match.metadata?.content)
+    });
+  });
+
+  // Filter out matches with no content
+  const validMatches = queryResponse.matches.filter(match => 
+    match.metadata?.content && typeof match.metadata.content === 'string' && match.metadata.content.trim() !== ''
+  );
+
+  console.log('Valid matches with content:', validMatches.length);
+  return validMatches as PineconeMatch[];
 }
 
 async function handleStreamingResponse(reader: ReadableStreamDefaultReader<Uint8Array>, controller: ReadableStreamDefaultController) {
   const decoder = new TextDecoder();
   let buffer = '';
+  let responseStarted = false;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -54,7 +77,6 @@ async function handleStreamingResponse(reader: ReadableStreamDefaultReader<Uint8
 
     for (const line of lines) {
       if (line.trim() === '') continue;
-
       if (line.includes('data: [DONE]')) continue;
 
       if (line.startsWith('data: ')) {
@@ -63,14 +85,26 @@ async function handleStreamingResponse(reader: ReadableStreamDefaultReader<Uint8
           const content = data.choices?.[0]?.delta?.content || 
                          data.choices?.[0]?.text || '';
           if (content) {
+            responseStarted = true;
             controller.enqueue(new TextEncoder().encode(content));
           }
         } catch (e) {
           console.error('Error parsing line:', line, e);
+          // If we can't parse as JSON but have content, send it directly
+          if (!line.includes('"content":null') && !line.includes('"role"')) {
+            const cleanLine = line.replace('data: ', '').trim();
+            if (cleanLine) {
+              responseStarted = true;
+              controller.enqueue(new TextEncoder().encode(cleanLine));
+            }
+          }
         }
       } else if (!line.includes('data:')) {
         // Direct text content
-        controller.enqueue(new TextEncoder().encode(line));
+        if (line.trim()) {
+          responseStarted = true;
+          controller.enqueue(new TextEncoder().encode(line));
+        }
       }
     }
   }
@@ -79,6 +113,13 @@ async function handleStreamingResponse(reader: ReadableStreamDefaultReader<Uint8
   if (buffer.trim() && !buffer.includes('data:')) {
     controller.enqueue(new TextEncoder().encode(buffer));
   }
+
+  // If no response was generated, provide a fallback
+  if (!responseStarted) {
+    controller.enqueue(new TextEncoder().encode(
+      "I apologize, but I'm having trouble processing that request. Could you please rephrase your question?"
+    ));
+  }
 }
 
 export async function POST(req: Request) {
@@ -86,7 +127,8 @@ export async function POST(req: Request) {
 
   console.log('Processing chat request:', {
     mode: deepDive ? 'Deep Dive' : 'Normal',
-    messageCount: messages.length
+    messageCount: messages.length,
+    lastMessage: messages[messages.length - 1]?.content
   });
   
   try {
@@ -99,8 +141,15 @@ export async function POST(req: Request) {
                              userMessage.content.toLowerCase().includes('relationship map') ||
                              userMessage.content.toLowerCase().includes('timeline');
 
-    // Force deep dive mode for special analyses
-    const shouldDeepDive = deepDive || isSpecialAnalysis;
+    // Check if we need sources based on the query
+    const needsSources = deepDive || 
+                        isSpecialAnalysis || 
+                        userMessage.content.toLowerCase().includes('who') ||
+                        userMessage.content.toLowerCase().includes('what') ||
+                        userMessage.content.toLowerCase().includes('when') ||
+                        userMessage.content.toLowerCase().includes('where') ||
+                        userMessage.content.toLowerCase().includes('why') ||
+                        userMessage.content.toLowerCase().includes('how');
 
     // Prepare system message based on mode
     let systemMessage = '';
@@ -115,7 +164,7 @@ export async function POST(req: Request) {
               const relevantMemories = await queryMemory(userMessage.content);
               const memoryContext = formatMemoryForAI(relevantMemories);
 
-              if (shouldDeepDive) {
+              if (needsSources) {
                 // Get initial context from Pinecone
                 relevantSources = await queryPineconeForContext(
                   userMessage.content,
@@ -123,7 +172,8 @@ export async function POST(req: Request) {
                   controller
                 );
 
-                systemMessage = `${AI_CONFIG.systemPrompt}
+                if (relevantSources.length > 0) {
+                  systemMessage = `${AI_CONFIG.systemPrompt}
 
 Project Details: ${projectDetails || 'No project details available'}
 
@@ -133,7 +183,20 @@ ${memoryContext}
 Available Sources:
 ${relevantSources.map(source => 
   `[Source: ${source.metadata?.fileName || 'Unknown'}]\n${source.metadata?.content || 'No content available'}`
-).join('\n\n')}`;
+).join('\n\n')}
+
+Based on these sources, provide a detailed response to the user's query. If you find relevant information in the sources, incorporate it into your response.`;
+                } else {
+                  console.log('No relevant sources found');
+                  systemMessage = `${AI_CONFIG.systemPrompt}
+
+Project Details: ${projectDetails || 'No project details available'}
+
+Previous Analyses:
+${memoryContext}
+
+Note: I don't have any specific information about that in my sources, but I'll help based on our conversation and general knowledge.`;
+                }
               } else {
                 systemMessage = `${AI_CONFIG.systemPrompt}
 
@@ -142,6 +205,8 @@ Project Details: ${projectDetails || 'No project details available'}
 Previous Analyses:
 ${memoryContext}`;
               }
+
+              console.log('System message prepared, length:', systemMessage.length);
 
               // Make request to DeepSeek
               const response = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
@@ -170,12 +235,21 @@ ${memoryContext}`;
                 if (errorText.includes('maximum context length')) {
                   controller.enqueue(new TextEncoder().encode('Let me try with a more focused approach...\n\n'));
                   
-                  // Reduce system message size
+                  // Take only the most relevant sources
+                  const topSources = relevantSources
+                    .sort((a, b) => (b.score || 0) - (a.score || 0))
+                    .slice(0, 3);
+
                   const reducedSystemMessage = `${AI_CONFIG.systemPrompt}
 
 Project Details: ${projectDetails || 'No project details available'}
 
-${shouldDeepDive ? 'Using most relevant source information...' : ''}`;
+Most Relevant Sources:
+${topSources.map(source => 
+  `[Source: ${source.metadata?.fileName || 'Unknown'}]\n${source.metadata?.content || 'No content available'}`
+).join('\n\n')}
+
+Based on these sources, provide a concise response to the user's query.`;
 
                   const retryResponse = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
                     method: 'POST',
