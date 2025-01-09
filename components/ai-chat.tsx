@@ -11,57 +11,79 @@ interface Message {
   content: string
 }
 
+interface QuickAction {
+  label: string;
+  description: string;
+  action: () => void;
+  icon?: string;
+}
+
 export function AIChat() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [projectDetails, setProjectDetails] = useState<string>('')
-  const [sources, setSources] = useState<string>('')
+  const [isDeepDiveMode, setIsDeepDiveMode] = useState(false)
+  const [analysisStage, setAnalysisStage] = useState<string>('')
   const { toast } = useToast()
 
   useEffect(() => {
-    // Fetch project details and sources when component mounts
-    const fetchInitialData = async () => {
+    // Fetch project details when component mounts
+    const fetchProjectDetails = async () => {
       try {
-        // Fetch project details
-        const detailsResponse = await fetch('/api/project-details')
-        if (!detailsResponse.ok) {
+        const response = await fetch('/api/project-details')
+        if (!response.ok) {
           throw new Error('Failed to fetch project details')
         }
-        const detailsData = await detailsResponse.json()
-        setProjectDetails(detailsData.details || '')
-
-        // Fetch sources
-        const sourcesResponse = await fetch('/api/sources')
-        if (!sourcesResponse.ok) {
-          throw new Error('Failed to fetch sources')
-        }
-        const sourcesData = await sourcesResponse.json()
-        console.log('Fetched sources:', sourcesData);
-        
-        // Format sources for AI consumption
-        const formattedSources = Array.isArray(sourcesData) 
-          ? sourcesData.map(source => 
-              `Source: ${source.name}\nContent: ${source.content || 'No content available'}`
-            ).join('\n\n')
-          : '';
-        
-        console.log('Formatted sources length:', formattedSources.length);
-        setSources(formattedSources)
+        const data = await response.json()
+        setProjectDetails(data.details || '')
       } catch (error) {
-        console.error('Error fetching initial data:', error)
+        console.error('Error fetching project details:', error)
         toast({
           title: "Error",
-          description: "Failed to fetch required data",
+          description: "Failed to fetch project details",
           variant: "destructive",
         })
       }
     }
 
-    fetchInitialData()
+    fetchProjectDetails()
   }, [toast])
 
-  const sendMessage = async () => {
+  const quickActions: QuickAction[] = [
+    {
+      label: "Character Brief",
+      description: "Generate a detailed character profile",
+      action: () => {
+        setInput("Generate a character brief for [character name]")
+        toast({
+          title: "Character Brief",
+          description: "Enter the character name in the prompt",
+        })
+      },
+      icon: "👤"
+    },
+    {
+      label: "Relationship Map",
+      description: "Map character relationships",
+      action: () => {
+        setIsDeepDiveMode(true)
+        setInput("Create a relationship map showing how all the characters are connected")
+      },
+      icon: "🔗"
+    },
+    {
+      label: "Timeline",
+      description: "Create a chronological timeline",
+      action: () => {
+        setIsDeepDiveMode(true)
+        setInput("Create a timeline of all major events")
+      },
+      icon: "📅"
+    }
+  ]
+
+  const sendMessage = async (useDeepDive = false) => {
     if (!input.trim() || isLoading) return
 
     const userMessage: Message = { role: 'user', content: input }
@@ -71,17 +93,19 @@ export function AIChat() {
 
     try {
       // Add a temporary assistant message that will be updated with streaming content
-      const tempAssistantMessage: Message = { role: 'assistant', content: '' }
+      const tempAssistantMessage: Message = { 
+        role: 'assistant', 
+        content: useDeepDive ? 'Analyzing project information...\n\n' : '' 
+      }
       setMessages(prev => [...prev, tempAssistantMessage])
 
-      console.log('Sending chat request with sources length:', sources?.length || 0);
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [...messages, userMessage],
           projectDetails,
-          sources,
+          deepDive: useDeepDive,
           stream: true
         })
       })
@@ -97,13 +121,22 @@ export function AIChat() {
         throw new Error('No response body available')
       }
 
-      let accumulatedContent = ''
+      let accumulatedContent = useDeepDive ? 'Analyzing project information...\n\n' : ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
         const chunk = decoder.decode(value)
+        
+        // Check for stage updates in the chunk
+        if (chunk.includes('[STAGE:')) {
+          const match = chunk.match(/\[STAGE:(.*?)\]/)
+          if (match) {
+            setAnalysisStage(match[1].trim())
+          }
+        }
+
         accumulatedContent += chunk
 
         // Update the last message with the accumulated content
@@ -128,12 +161,15 @@ export function AIChat() {
       setMessages(prev => prev.slice(0, -1))
     } finally {
       setIsLoading(false)
+      setIsDeepDiveMode(false)  // Reset after completion
+      setAnalysisStage('')
     }
   }
 
   const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      sendMessage()
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault()
+      sendMessage(isDeepDiveMode)
     }
   }
 
@@ -141,8 +177,33 @@ export function AIChat() {
     setInput(e.target.value)
   }
 
+  const toggleDeepDive = () => {
+    setIsDeepDiveMode(!isDeepDiveMode)
+    toast({
+      title: isDeepDiveMode ? "Normal Mode" : "Deep Dive Mode",
+      description: isDeepDiveMode 
+        ? "AI will respond based on general context" 
+        : "AI will analyze all available sources for comprehensive insights",
+    })
+  }
+
   return (
-    <div className="h-[400px] flex flex-col">
+    <div className="h-[600px] flex flex-col">
+      <div className="mb-4 flex flex-wrap gap-2">
+        {quickActions.map((action, index) => (
+          <Button
+            key={index}
+            onClick={action.action}
+            variant="outline"
+            className="flex items-center gap-2"
+            disabled={isLoading}
+          >
+            {action.icon && <span>{action.icon}</span>}
+            {action.label}
+          </Button>
+        ))}
+      </div>
+
       <ScrollArea className="flex-grow mb-4 p-4 border rounded">
         {messages.map((message, index) => (
           <div key={index} className={`mb-2 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
@@ -151,18 +212,38 @@ export function AIChat() {
             </span>
           </div>
         ))}
+        {isLoading && analysisStage && (
+          <div className="text-sm text-muted-foreground animate-pulse">
+            {analysisStage}...
+          </div>
+        )}
       </ScrollArea>
-      <div className="flex">
-        <Input
-          value={input}
-          onChange={handleInputChange}
-          placeholder="Type your message..."
-          className="flex-grow mr-2"
-          onKeyPress={handleKeyPress}
+
+      <div className="flex flex-col gap-2">
+        <div className="flex gap-2">
+          <Input
+            value={input}
+            onChange={handleInputChange}
+            placeholder={isDeepDiveMode ? "Ask a detailed question about the sources..." : "Type your message..."}
+            className="flex-grow"
+            onKeyPress={handleKeyPress}
+            disabled={isLoading}
+          />
+          <Button 
+            onClick={() => sendMessage(isDeepDiveMode)} 
+            disabled={isLoading}
+            className="min-w-[80px]"
+          >
+            {isLoading ? 'Thinking...' : 'Send'}
+          </Button>
+        </div>
+        <Button
+          onClick={toggleDeepDive}
+          variant={isDeepDiveMode ? "secondary" : "outline"}
+          className="w-full"
           disabled={isLoading}
-        />
-        <Button onClick={sendMessage} disabled={isLoading}>
-          {isLoading ? 'Sending...' : 'Send'}
+        >
+          {isDeepDiveMode ? "🔍 Deep Dive Mode (Analyzing All Sources)" : "💭 Normal Mode"}
         </Button>
       </div>
     </div>
