@@ -24,7 +24,6 @@ export function AIChat() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [projectDetails, setProjectDetails] = useState<string>('')
-  const [isDeepDiveMode, setIsDeepDiveMode] = useState(false)
   const [useSources, setUseSources] = useState(false)
   const [analysisStage, setAnalysisStage] = useState<string>('')
   const { toast } = useToast()
@@ -135,33 +134,74 @@ export function AIChat() {
       }
 
       let accumulatedContent = ''
+      let buffer = ''
 
       while (true) {
         const { done, value } = await reader.read()
         if (done) break
 
-        const chunk = decoder.decode(value)
-        
-        // Only process stage updates and actual content
-        if (chunk.includes('[STAGE:')) {
-          const match = chunk.match(/\[STAGE:(.*?)\]/)
-          if (match) {
-            setAnalysisStage(match[1].trim())
-          }
-        } else if (!chunk.includes('data:')) {
-          accumulatedContent += chunk
-        }
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || '' // Keep the last partial line in the buffer
 
-        // Update the last message with the accumulated content
+        for (const line of lines) {
+          if (line.trim() === '') continue
+
+          // Handle stage updates
+          if (line.includes('[STAGE:')) {
+            const match = line.match(/\[STAGE:(.*?)\]/)
+            if (match) {
+              setAnalysisStage(match[1].trim())
+            }
+            continue
+          }
+
+          // Handle streaming content
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(5))
+              if (data.choices?.[0]?.delta?.content) {
+                accumulatedContent += data.choices[0].delta.content
+              }
+            } catch (e) {
+              // If we can't parse as JSON, check if it's a direct text response
+              const content = line.replace('data: ', '').trim()
+              if (content && !content.includes('[DONE]')) {
+                accumulatedContent += content + ' '
+              }
+            }
+          } else if (!line.includes('data:')) {
+            // Direct text content
+            accumulatedContent += line + ' '
+          }
+
+          // Update the last message with accumulated content
+          if (accumulatedContent.trim()) {
+            setMessages(prev => {
+              const newMessages = [...prev]
+              newMessages[newMessages.length - 1] = {
+                role: 'assistant',
+                content: accumulatedContent.trim()
+              }
+              return newMessages
+            })
+          }
+        }
+      }
+
+      // Handle any remaining content in the buffer
+      if (buffer.trim() && !buffer.includes('data:')) {
+        accumulatedContent += buffer + ' '
         setMessages(prev => {
           const newMessages = [...prev]
           newMessages[newMessages.length - 1] = {
             role: 'assistant',
-            content: accumulatedContent.trim() || 'Thinking...'
+            content: accumulatedContent.trim()
           }
           return newMessages
         })
       }
+
     } catch (error) {
       console.error('Error getting AI response:', error)
       toast({
