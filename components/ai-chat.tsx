@@ -16,29 +16,49 @@ export function AIChat() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [projectDetails, setProjectDetails] = useState<string>('')
+  const [sources, setSources] = useState<string>('')
   const { toast } = useToast()
 
   useEffect(() => {
-    // Fetch project details when component mounts
-    const fetchProjectDetails = async () => {
+    // Fetch project details and sources when component mounts
+    const fetchInitialData = async () => {
       try {
-        const response = await fetch('/api/project-details')
-        if (!response.ok) {
+        // Fetch project details
+        const detailsResponse = await fetch('/api/project-details')
+        if (!detailsResponse.ok) {
           throw new Error('Failed to fetch project details')
         }
-        const data = await response.json()
-        setProjectDetails(data.details || '')
+        const detailsData = await detailsResponse.json()
+        setProjectDetails(detailsData.details || '')
+
+        // Fetch sources
+        const sourcesResponse = await fetch('/api/sources')
+        if (!sourcesResponse.ok) {
+          throw new Error('Failed to fetch sources')
+        }
+        const sourcesData = await sourcesResponse.json()
+        console.log('Fetched sources:', sourcesData);
+        
+        // Format sources for AI consumption
+        const formattedSources = Array.isArray(sourcesData) 
+          ? sourcesData.map(source => 
+              `Source: ${source.name}\nContent: ${source.content || 'No content available'}`
+            ).join('\n\n')
+          : '';
+        
+        console.log('Formatted sources length:', formattedSources.length);
+        setSources(formattedSources)
       } catch (error) {
-        console.error('Error fetching project details:', error)
+        console.error('Error fetching initial data:', error)
         toast({
           title: "Error",
-          description: "Failed to fetch project details",
+          description: "Failed to fetch required data",
           variant: "destructive",
         })
       }
     }
 
-    fetchProjectDetails()
+    fetchInitialData()
   }, [toast])
 
   const sendMessage = async () => {
@@ -54,12 +74,14 @@ export function AIChat() {
       const tempAssistantMessage: Message = { role: 'assistant', content: '' }
       setMessages(prev => [...prev, tempAssistantMessage])
 
+      console.log('Sending chat request with sources length:', sources?.length || 0);
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [...messages, userMessage],
           projectDetails,
+          sources,
           stream: true
         })
       })
