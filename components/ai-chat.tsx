@@ -92,6 +92,30 @@ export function AIChat() {
         setUseSources(true)
         setInput("Create a timeline of all major events")
       }
+    },
+    {
+      label: "Find Soundbites",
+      description: "Search for specific types of soundbites",
+      action: () => {
+        setUseSources(true)
+        setInput("What theme, idea, or statement type would you like?")
+        toast({
+          title: "Find Soundbites",
+          description: "Enter a theme or topic to search for",
+        })
+      }
+    },
+    {
+      label: "Create Soundbite",
+      description: "Find ideal soundbites from specific sources",
+      action: () => {
+        setUseSources(true)
+        setInput("What is the ideal soundbite you'd like me to create and who would you like it from?")
+        toast({
+          title: "Create Soundbite",
+          description: "Describe the desired soundbite and source",
+        })
+      }
     }
   ]
 
@@ -111,6 +135,10 @@ export function AIChat() {
       }
       setMessages(prev => [...prev, tempAssistantMessage])
 
+      // Check if this is a soundbite request
+      const isSoundbiteRequest = input.startsWith("What theme, idea, or statement type would you like?") ||
+                                input.startsWith("What is the ideal soundbite you'd like me to create");
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -118,6 +146,7 @@ export function AIChat() {
           messages: [...messages, userMessage],
           projectDetails,
           deepDive: useSources,
+          isSoundbiteRequest,
           stream: true
         })
       })

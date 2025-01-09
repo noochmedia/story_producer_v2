@@ -12,6 +12,11 @@ interface SourceMetadata {
   [key: string]: any;
 }
 
+interface TimestampedLine {
+  timestamp: string;
+  content: string;
+}
+
 type PineconeMatch = ScoredPineconeRecord<SourceMetadata>;
 
 function getContentPreview(content: any): string {
@@ -22,14 +27,27 @@ function getContentPreview(content: any): string {
 }
 
 function cleanTranscriptContent(content: string): string {
-  // Remove timestamp lines
-  const lines = content.split('\n').filter(line => !line.match(/^\[\d{2}:\d{2}:\d{2}:\d{2}\]/));
-  
-  // Remove empty lines and [Inaudible]
-  return lines
-    .filter(line => line.trim() && !line.includes('Inaudible'))
-    .join('\n')
-    .trim();
+  // Remove timestamp lines but keep them for reference
+  const lines = content.split('\n');
+  const cleanedLines: TimestampedLine[] = [];
+  let lastTimestamp = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const timestampMatch = line.match(/^\[\d{2}:\d{2}:\d{2}:\d{2}\]/);
+    
+    if (timestampMatch) {
+      lastTimestamp = timestampMatch[0];
+      continue;
+    }
+
+    if (line.trim() && !line.includes('Inaudible')) {
+      // If this is actual content, add it with the last known timestamp
+      cleanedLines.push({ timestamp: lastTimestamp, content: line.trim() });
+    }
+  }
+
+  return JSON.stringify(cleanedLines);
 }
 
 function processMatch(match: PineconeMatch): PineconeMatch {
@@ -95,10 +113,11 @@ async function queryPineconeForContext(query: string, stage: string, controller:
 }
 
 export async function POST(req: Request) {
-  const { messages, projectDetails, deepDive = false, model, temperature, max_tokens, stream = false } = await req.json()
+  const { messages, projectDetails, deepDive = false, isSoundbiteRequest = false, model, temperature, max_tokens, stream = false } = await req.json()
 
   console.log('Processing chat request:', {
     mode: deepDive ? 'Deep Dive' : 'Normal',
+    type: isSoundbiteRequest ? 'Soundbite' : 'Regular',
     messageCount: messages.length,
     lastMessage: messages[messages.length - 1]?.content
   });
@@ -135,26 +154,170 @@ export async function POST(req: Request) {
                 );
 
                 if (relevantSources.length > 0) {
-                  systemMessage = `${AI_CONFIG.systemPrompt}
+                  if (isSoundbiteRequest) {
+                    const isFindSoundbite = userMessage.content.startsWith("What theme, idea, or statement type would you like?");
+                    
+                    systemMessage = `${AI_CONFIG.systemPrompt}
 
-Project Details: ${projectDetails || 'No project details available'}
+You are a professional video editor searching through interview transcripts ${isFindSoundbite ? 'to find relevant soundbites' : 'to create specific soundbites'}. Your task is to ${isFindSoundbite ? 'identify quotes that match the requested theme or topic' : 'find quotes that best match the requested soundbite and speaker'}.
 
-Previous Analyses:
-${memoryContext}
-
-I have found relevant information in the interview transcripts. Here are the excerpts:
+Here are the relevant interview excerpts:
 
 ${relevantSources.map(source => 
   `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || 'No content available'}`
 ).join('\n\n')}
 
-Analyze these interview excerpts carefully and provide a detailed response to the user's question. Focus on:
-1. Understanding the context and relationships between different pieces of information
-2. Drawing meaningful connections and insights
-3. Quoting relevant parts of the sources to support your points
-4. Providing a coherent and complete analysis
+Response Format:
+-------------------
+For each soundbite, provide:
 
-If you find relevant information in the sources, incorporate it into your response and explain its significance. If you don't find a direct answer, explain what you can infer from the available information.`;
+1. Source: [Filename]
+2. Timecode: [Exact timestamp]
+3. Quote: "[Exact quote from source]"
+4. Context: Brief explanation of the quote's significance
+
+Critical Requirements:
+- Only use EXACT quotes from the sources
+- Include PRECISE timestamps
+- Never modify or paraphrase quotes
+- If no suitable quotes found, clearly state this
+- Double-check quote accuracy
+- Ensure timestamps match the quotes
+
+${isFindSoundbite ? `
+Search Strategy:
+- Look for quotes that express the requested theme
+- Consider both direct and indirect expressions of the theme
+- Note any contextual elements that enhance the quote's meaning
+- Group related quotes if they build on the same idea` : `
+Creation Strategy:
+- Find quotes that best match the requested soundbite concept
+- Consider the speaker's unique voice and perspective
+- Look for natural, authentic expressions
+- Identify quotes that capture the intended meaning`}`;
+                  } else if (userMessage.content.startsWith("Who would you like a character brief on?")) {
+                    systemMessage = `${AI_CONFIG.systemPrompt}
+
+You are a professional story analyst creating a detailed character profile. Your task is to analyze all available information about the specified character from the interview transcripts.
+
+Here are the relevant interview excerpts:
+
+${relevantSources.map(source => 
+  `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || 'No content available'}`
+).join('\n\n')}
+
+Format your response as follows:
+
+CHARACTER PROFILE
+----------------
+
+Overview:
+[2-3 sentences introducing the character]
+
+Key Characteristics:
+• [Trait 1]
+• [Trait 2]
+• etc.
+
+Notable Quotes:
+[Include exact quotes with timestamps that reveal character]
+
+Relationships:
+[Describe connections to other characters]
+
+Background:
+[Key events and experiences]
+
+Analysis:
+[Deeper insights about the character]
+
+Remember to:
+- Support all points with exact quotes
+- Include timestamps for quotes
+- Focus on factual information from sources
+- Note any conflicting information
+- Maintain objective analysis`;
+                  } else if (userMessage.content.includes("relationship map")) {
+                    systemMessage = `${AI_CONFIG.systemPrompt}
+
+You are a professional story analyst mapping character relationships. Your task is to analyze the connections between characters mentioned in the interview transcripts.
+
+Here are the relevant interview excerpts:
+
+${relevantSources.map(source => 
+  `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || 'No content available'}`
+).join('\n\n')}
+
+Format your response as follows:
+
+RELATIONSHIP MAP
+---------------
+
+Overview:
+[Brief summary of key relationships]
+
+Key Relationships:
+
+[Character 1] ↔ [Character 2]
+• Nature of Relationship
+• Key Interactions
+• Supporting Quote: "[exact quote]" [timestamp]
+
+[Continue for each significant relationship pair]
+
+Group Dynamics:
+[Analysis of larger group interactions]
+
+Timeline:
+[How relationships evolved]
+
+Remember to:
+- Support each relationship with quotes
+- Include timestamps
+- Focus on direct evidence
+- Note relationship changes
+- Indicate relationship strength`;
+                  } else if (userMessage.content.includes("timeline")) {
+                    systemMessage = `${AI_CONFIG.systemPrompt}
+
+You are a professional story analyst creating a chronological timeline. Your task is to organize events mentioned in the interview transcripts.
+
+Here are the relevant interview excerpts:
+
+${relevantSources.map(source => 
+  `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || 'No content available'}`
+).join('\n\n')}
+
+Format your response as follows:
+
+CHRONOLOGICAL TIMELINE
+---------------------
+
+Overview:
+[Brief summary of the time period covered]
+
+Events:
+
+[Date/Period 1]
+• Event: [Description]
+• Source: [Filename]
+• Quote: "[exact quote]" [timestamp]
+
+[Continue chronologically]
+
+Key Periods:
+[Identify significant time spans]
+
+Patterns:
+[Note recurring events or themes]
+
+Remember to:
+- Order events chronologically
+- Include exact quotes and timestamps
+- Note any timeline uncertainties
+- Connect related events
+- Highlight key moments`;
+                  }
                 } else {
                   console.log('No relevant sources found');
                   systemMessage = `${AI_CONFIG.systemPrompt}
@@ -170,7 +333,8 @@ Let me help you with your question. Note that I'm not currently using the interv
               console.log('System message prepared:', {
                 length: systemMessage.length,
                 includesSources: relevantSources.length > 0,
-                sourcesCount: relevantSources.length
+                sourcesCount: relevantSources.length,
+                isSoundbiteRequest
               });
 
               const stream = await openai.chat.completions.create({
