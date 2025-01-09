@@ -1,10 +1,11 @@
 "use client"
 
+import * as React from 'react'
 import { useState, useEffect, useCallback } from 'react'
-import { File, FileAudio, FileVideo, Trash2, Eye, RefreshCw } from 'lucide-react'
-import { Button } from "@/components/ui/button"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { useToast } from "@/components/ui/use-toast"
+import { File, FileAudio, FileVideo, Trash2, Eye, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react'
+import { Button } from "./ui/button"
+import { Alert, AlertDescription } from "./ui/alert"
+import { useToast } from "./ui/use-toast"
 
 interface Source {
   id: string
@@ -18,6 +19,7 @@ export function Sources() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
+  const [isExpanded, setIsExpanded] = useState(true)
   const { toast } = useToast()
 
   const fetchSources = useCallback(async () => {
@@ -100,10 +102,31 @@ export function Sources() {
     }
   }
 
+  const toggleExpanded = () => {
+    setIsExpanded(!isExpanded)
+  }
+
   return (
     <div>
       <div className="flex justify-between items-center mb-2">
-        <h2 className="text-lg font-semibold">Sources</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="text-lg font-semibold">Sources</h2>
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            onClick={toggleExpanded}
+            className="p-1 h-auto"
+          >
+            {isExpanded ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            ({sources.length} {sources.length === 1 ? 'source' : 'sources'})
+          </span>
+        </div>
         <Button variant="ghost" size="sm" onClick={fetchSources} disabled={isLoading}>
           <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
         </Button>
@@ -113,47 +136,48 @@ export function Sources() {
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
-      {isLoading ? (
-        <div className="flex justify-center items-center h-20">
-          <RefreshCw className="h-6 w-6 animate-spin" />
-        </div>
-      ) : (
-        <ul className="space-y-1">
-          {Array.isArray(sources) && sources.map((source) => (
-            <li 
-              key={source.id} 
-              className="flex items-center justify-between space-x-2 hover:bg-accent p-1 rounded-md text-sm"
-            >
-              <div className="flex items-center space-x-2 flex-grow min-w-0">
-                {getFileIcon(source.type)}
-                <span className="truncate">{source.name}</span>
-              </div>
-              <div className="flex space-x-1 flex-shrink-0">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleView(source)}
-                >
-                  <Eye className="h-4 w-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => handleDelete(source.id)}
-                  disabled={isDeleting === source.id}
-                >
-                  {isDeleting === source.id ? (
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
-            </li>
-          ))}
-        </ul>
+      {isExpanded && (
+        isLoading ? (
+          <div className="flex justify-center items-center h-20">
+            <RefreshCw className="h-6 w-6 animate-spin" />
+          </div>
+        ) : (
+          <ul className="space-y-1">
+            {Array.isArray(sources) && sources.map((source) => (
+              <li 
+                key={source.id} 
+                className="flex items-center justify-between space-x-2 hover:bg-accent p-1 rounded-md text-sm"
+              >
+                <div className="flex items-center space-x-2 flex-grow min-w-0">
+                  {getFileIcon(source.type)}
+                  <span className="truncate">{source.name}</span>
+                </div>
+                <div className="flex space-x-1 flex-shrink-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleView(source)}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDelete(source.id)}
+                    disabled={isDeleting === source.id}
+                  >
+                    {isDeleting === source.id ? (
+                      <RefreshCw className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )
       )}
     </div>
   )
 }
-
