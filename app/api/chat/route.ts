@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server'
-import { AI_CONFIG } from '@/lib/ai-config'
+import { AI_CONFIG } from '../../../lib/ai-config'
 
 export async function POST(req: Request) {
   const { messages, projectDetails, sources, model, temperature, max_tokens, prompts = [], stream = false } = await req.json()
 
-  console.log('Received sources in chat API:', sources ? 'Sources available' : 'No sources available');
+  console.log('Received request payload:', {
+    hasMessages: messages?.length > 0,
+    hasProjectDetails: !!projectDetails,
+    sourcesLength: sources?.length || 0,
+    temperature,
+    max_tokens
+  });
 
   const systemMessage = `${AI_CONFIG.systemPrompt}
 
@@ -17,6 +23,10 @@ Available Prompts:
 ${Array.isArray(prompts) ? prompts.map((prompt: string, index: number) => `${index + 1}. ${prompt}`).join('\n') : ''}
 
 IMPORTANT: Always refer to and use the provided sources in your responses. If relevant information is available in the sources, incorporate it into your answer.`
+
+  console.log('System message length:', systemMessage.length);
+  console.log('First 500 chars of system message:', systemMessage.substring(0, 500));
+  console.log('Last 500 chars of system message:', systemMessage.substring(systemMessage.length - 500));
 
   console.log('Sending request to DeepSeek API...');
   const response = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
@@ -31,15 +41,16 @@ IMPORTANT: Always refer to and use the provided sources in your responses. If re
         { role: "system", content: systemMessage },
         ...messages
       ],
-      temperature,
-      max_tokens,
+      temperature: temperature || AI_CONFIG.temperature,
+      max_tokens: max_tokens || AI_CONFIG.max_tokens,
       stream,
     }),
   })
 
   if (!response.ok) {
-    console.error('DeepSeek API request failed:', await response.text());
-    throw new Error(`DeepSeek API request failed`);
+    const errorText = await response.text();
+    console.error('DeepSeek API request failed:', errorText);
+    throw new Error(`DeepSeek API request failed: ${errorText}`);
   }
 
   // Handle streaming response
@@ -83,6 +94,7 @@ IMPORTANT: Always refer to and use the provided sources in your responses. If re
               }
             }
           } catch (error) {
+            console.error('Error in streaming response:', error);
             controller.error(error);
           }
         },
