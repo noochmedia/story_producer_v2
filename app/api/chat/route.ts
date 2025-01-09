@@ -67,6 +67,9 @@ IMPORTANT: Always refer to and use the provided sources in your responses. If re
       new ReadableStream({
         async start(controller) {
           try {
+            // Send initial "thinking" message
+            controller.enqueue(encoder.encode('Analyzing sources and formulating response...\n\n'));
+
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
@@ -85,10 +88,16 @@ IMPORTANT: Always refer to and use the provided sources in your responses. If re
                   }
                   try {
                     const parsed = JSON.parse(data);
-                    const text = parsed.choices[0]?.delta?.content || '';
-                    controller.enqueue(encoder.encode(text));
+                    // Handle both OpenAI and DeepSeek response formats
+                    const text = parsed.choices?.[0]?.delta?.content || 
+                               parsed.choices?.[0]?.text ||
+                               '';
+                    if (text) {
+                      controller.enqueue(encoder.encode(text));
+                    }
                   } catch (e) {
                     console.error('Error parsing streaming response:', e);
+                    console.log('Problematic chunk:', line);
                   }
                 }
               }
