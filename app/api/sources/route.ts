@@ -12,7 +12,15 @@ interface PineconeMatch {
         fileType?: string;
         fileUrl?: string;
         content?: string;
+        type?: string;
     };
+}
+
+function getContentPreview(content: any): string {
+    if (typeof content === 'string') {
+        return content.length > 100 ? content.substring(0, 100) + '...' : content;
+    }
+    return 'No content preview available';
 }
 
 export async function GET(request: NextRequest) {
@@ -37,6 +45,16 @@ export async function GET(request: NextRequest) {
         const index = pinecone.index(process.env.PINECONE_INDEX);
         console.log('Pinecone index accessed:', process.env.PINECONE_INDEX);
 
+        // First try to list all vectors to see what's in the index
+        console.log('Listing all vectors in index...');
+        const stats = await index.describeIndexStats();
+        console.log('Index stats:', {
+            totalRecords: stats.totalRecordCount,
+            indexFullness: stats.indexFullness,
+            dimensions: stats.dimension
+        });
+
+        // Now query for sources
         console.log('Generating embedding for sources query...');
         const queryEmbedding = await generateEmbedding("list all sources");
         console.log('Embedding generated, length:', queryEmbedding.length);
@@ -50,9 +68,25 @@ export async function GET(request: NextRequest) {
         });
         console.log('Pinecone query completed, matches:', queryResponse.matches?.length || 0);
 
+        // Log each match for debugging
+        queryResponse.matches?.forEach((match, i) => {
+            console.log(`Match ${i + 1}:`, {
+                id: match.id,
+                score: match.score,
+                fileName: match.metadata?.fileName,
+                type: match.metadata?.type,
+                contentPreview: getContentPreview(match.metadata?.content)
+            });
+        });
+
         if (queryResponse.matches?.length > 0) {
             const sources = queryResponse.matches
-                .filter((match: PineconeMatch) => match.metadata?.fileName)
+                .filter((match: PineconeMatch) => 
+                    match.metadata?.fileName && 
+                    match.metadata?.content && 
+                    typeof match.metadata.content === 'string' &&
+                    match.metadata.content.trim() !== ''
+                )
                 .map((match: PineconeMatch) => ({
                     id: match.id,
                     name: match.metadata?.fileName as string,
@@ -62,6 +96,9 @@ export async function GET(request: NextRequest) {
                 }));
 
             console.log('Sources processed successfully, count:', sources.length);
+            if (sources.length === 0) {
+                console.log('Warning: Found matches but no valid sources after filtering');
+            }
             return NextResponse.json(sources)
         } else {
             console.log('No sources found in Pinecone.');
