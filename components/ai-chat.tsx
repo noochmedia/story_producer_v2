@@ -6,6 +6,7 @@ import { Input } from "./ui/input"
 import { ScrollArea } from "./ui/scroll-area"
 import { useToast } from "./ui/use-toast"
 import { cn } from "../lib/utils"
+import { Checkbox } from "./ui/checkbox"
 
 interface Message {
   role: 'user' | 'assistant'
@@ -24,6 +25,7 @@ export function AIChat() {
   const [isLoading, setIsLoading] = useState(false)
   const [projectDetails, setProjectDetails] = useState<string>('')
   const [isDeepDiveMode, setIsDeepDiveMode] = useState(false)
+  const [useSources, setUseSources] = useState(false)
   const [analysisStage, setAnalysisStage] = useState<string>('')
   const { toast } = useToast()
 
@@ -69,7 +71,7 @@ export function AIChat() {
       description: "Generate a detailed character profile",
       action: () => {
         setInput("Who would you like a character brief on?")
-        setIsDeepDiveMode(true)
+        setUseSources(true)
         toast({
           title: "Character Brief",
           description: "Enter a character's name",
@@ -80,7 +82,7 @@ export function AIChat() {
       label: "Relationship Map",
       description: "Map character relationships",
       action: () => {
-        setIsDeepDiveMode(true)
+        setUseSources(true)
         setInput("Create a relationship map showing how all the characters are connected")
       }
     },
@@ -88,13 +90,13 @@ export function AIChat() {
       label: "Timeline",
       description: "Create a chronological timeline",
       action: () => {
-        setIsDeepDiveMode(true)
+        setUseSources(true)
         setInput("Create a timeline of all major events")
       }
     }
   ]
 
-  const sendMessage = async (useDeepDive = false) => {
+  const sendMessage = async () => {
     if (!input.trim() || isLoading) return
 
     const userMessage: Message = { role: 'user', content: input }
@@ -106,7 +108,7 @@ export function AIChat() {
       // Add a temporary assistant message that will be updated with streaming content
       const tempAssistantMessage: Message = { 
         role: 'assistant', 
-        content: useDeepDive ? 'Analyzing sources...' : 'Thinking...' 
+        content: useSources ? 'Analyzing sources...' : 'Thinking...' 
       }
       setMessages(prev => [...prev, tempAssistantMessage])
 
@@ -116,7 +118,7 @@ export function AIChat() {
         body: JSON.stringify({
           messages: [...messages, userMessage],
           projectDetails,
-          deepDive: useDeepDive,
+          deepDive: useSources,
           stream: true
         })
       })
@@ -133,7 +135,6 @@ export function AIChat() {
       }
 
       let accumulatedContent = ''
-      let responseStarted = false
 
       while (true) {
         const { done, value } = await reader.read()
@@ -149,32 +150,17 @@ export function AIChat() {
           }
         } else if (!chunk.includes('data:')) {
           accumulatedContent += chunk
-          responseStarted = true
-        } else if (chunk.includes('data:') && !chunk.includes('[DONE]')) {
-          try {
-            const data = JSON.parse(chunk.replace('data:', '').trim())
-            const text = data.choices?.[0]?.delta?.content || 
-                        data.choices?.[0]?.text || ''
-            if (text) {
-              accumulatedContent += text
-              responseStarted = true
-            }
-          } catch (e) {
-            console.error('Error parsing chunk:', e)
-          }
         }
 
         // Update the last message with the accumulated content
-        if (responseStarted) {
-          setMessages(prev => {
-            const newMessages = [...prev]
-            newMessages[newMessages.length - 1] = {
-              role: 'assistant',
-              content: accumulatedContent.trim() || 'Thinking...'
-            }
-            return newMessages
-          })
-        }
+        setMessages(prev => {
+          const newMessages = [...prev]
+          newMessages[newMessages.length - 1] = {
+            role: 'assistant',
+            content: accumulatedContent.trim() || 'Thinking...'
+          }
+          return newMessages
+        })
       }
     } catch (error) {
       console.error('Error getting AI response:', error)
@@ -195,7 +181,7 @@ export function AIChat() {
   const handleKeyPress = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      sendMessage(isDeepDiveMode)
+      sendMessage()
     }
   }
 
@@ -226,7 +212,7 @@ export function AIChat() {
 
       <div className="flex flex-col gap-2">
         {/* Quick Action Buttons */}
-        <div className="flex flex-wrap gap-2 items-center">
+        <div className="flex flex-wrap gap-2">
           {quickActions.map((action, index) => (
             <Button
               key={index}
@@ -238,21 +224,10 @@ export function AIChat() {
               {action.label}
             </Button>
           ))}
-          <Button
-            onClick={() => setIsDeepDiveMode(!isDeepDiveMode)}
-            variant={isDeepDiveMode ? "secondary" : "outline"}
-            size="sm"
-            className={cn(
-              isDeepDiveMode && "border-primary"
-            )}
-            disabled={isLoading}
-          >
-            {isDeepDiveMode ? "Deep Dive" : "Normal"}
-          </Button>
         </div>
 
         {/* Input Area */}
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <Input
             value={input}
             onChange={handleInputChange}
@@ -261,13 +236,29 @@ export function AIChat() {
             onKeyPress={handleKeyPress}
             disabled={isLoading}
           />
-          <Button 
-            onClick={() => sendMessage(isDeepDiveMode)} 
-            disabled={isLoading}
-            className="min-w-[80px]"
-          >
-            {isLoading ? 'Thinking...' : 'Send'}
-          </Button>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <Checkbox
+                id="useSources"
+                checked={useSources}
+                onCheckedChange={(checked) => setUseSources(checked as boolean)}
+                disabled={isLoading}
+              />
+              <label
+                htmlFor="useSources"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+              >
+                Use sources
+              </label>
+            </div>
+            <Button 
+              onClick={sendMessage} 
+              disabled={isLoading}
+              className="min-w-[80px]"
+            >
+              {isLoading ? 'Thinking...' : 'Send'}
+            </Button>
+          </div>
         </div>
       </div>
     </div>
