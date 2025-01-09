@@ -5,6 +5,7 @@ import { Button } from "./ui/button"
 import { Input } from "./ui/input"
 import { ScrollArea } from "./ui/scroll-area"
 import { useToast } from "./ui/use-toast"
+import { cn } from "../lib/utils"
 
 interface Message {
   role: 'user' | 'assistant'
@@ -15,7 +16,6 @@ interface QuickAction {
   label: string;
   description: string;
   action: () => void;
-  icon?: string;
 }
 
 export function AIChat() {
@@ -56,12 +56,12 @@ export function AIChat() {
       description: "Generate a detailed character profile",
       action: () => {
         setInput("Generate a character brief for [character name]")
+        setIsDeepDiveMode(true)
         toast({
           title: "Character Brief",
           description: "Enter the character name in the prompt",
         })
-      },
-      icon: "👤"
+      }
     },
     {
       label: "Relationship Map",
@@ -69,8 +69,7 @@ export function AIChat() {
       action: () => {
         setIsDeepDiveMode(true)
         setInput("Create a relationship map showing how all the characters are connected")
-      },
-      icon: "🔗"
+      }
     },
     {
       label: "Timeline",
@@ -78,8 +77,7 @@ export function AIChat() {
       action: () => {
         setIsDeepDiveMode(true)
         setInput("Create a timeline of all major events")
-      },
-      icon: "📅"
+      }
     }
   ]
 
@@ -95,7 +93,7 @@ export function AIChat() {
       // Add a temporary assistant message that will be updated with streaming content
       const tempAssistantMessage: Message = { 
         role: 'assistant', 
-        content: useDeepDive ? 'Analyzing project information...\n\n' : '' 
+        content: useDeepDive ? 'Analyzing sources...' : 'Thinking...' 
       }
       setMessages(prev => [...prev, tempAssistantMessage])
 
@@ -121,7 +119,7 @@ export function AIChat() {
         throw new Error('No response body available')
       }
 
-      let accumulatedContent = useDeepDive ? 'Analyzing project information...\n\n' : ''
+      let accumulatedContent = useDeepDive ? 'Analyzing sources...\n\n' : ''
 
       while (true) {
         const { done, value } = await reader.read()
@@ -129,22 +127,22 @@ export function AIChat() {
 
         const chunk = decoder.decode(value)
         
-        // Check for stage updates in the chunk
+        // Only process stage updates and actual content
         if (chunk.includes('[STAGE:')) {
           const match = chunk.match(/\[STAGE:(.*?)\]/)
           if (match) {
             setAnalysisStage(match[1].trim())
           }
+        } else if (!chunk.includes('data:')) {
+          accumulatedContent += chunk
         }
-
-        accumulatedContent += chunk
 
         // Update the last message with the accumulated content
         setMessages(prev => {
           const newMessages = [...prev]
           newMessages[newMessages.length - 1] = {
             role: 'assistant',
-            content: accumulatedContent
+            content: accumulatedContent.trim()
           }
           return newMessages
         })
@@ -161,7 +159,6 @@ export function AIChat() {
       setMessages(prev => prev.slice(0, -1))
     } finally {
       setIsLoading(false)
-      setIsDeepDiveMode(false)  // Reset after completion
       setAnalysisStage('')
     }
   }
@@ -177,31 +174,32 @@ export function AIChat() {
     setInput(e.target.value)
   }
 
-  const toggleDeepDive = () => {
-    setIsDeepDiveMode(!isDeepDiveMode)
-    toast({
-      title: isDeepDiveMode ? "Normal Mode" : "Deep Dive Mode",
-      description: isDeepDiveMode 
-        ? "AI will respond based on general context" 
-        : "AI will analyze all available sources for comprehensive insights",
-    })
-  }
-
   return (
     <div className="h-[600px] flex flex-col">
-      <div className="mb-4 flex flex-wrap gap-2">
-        {quickActions.map((action, index) => (
-          <Button
-            key={index}
-            onClick={action.action}
-            variant="outline"
-            className="flex items-center gap-2"
-            disabled={isLoading}
-          >
-            {action.icon && <span>{action.icon}</span>}
-            {action.label}
-          </Button>
-        ))}
+      {/* Mode Toggle */}
+      <div className="grid grid-cols-2 gap-2 mb-4">
+        <Button
+          onClick={() => setIsDeepDiveMode(false)}
+          variant={isDeepDiveMode ? "outline" : "secondary"}
+          className={cn(
+            "w-full",
+            !isDeepDiveMode && "border-2 border-primary"
+          )}
+          disabled={isLoading}
+        >
+          Normal Mode
+        </Button>
+        <Button
+          onClick={() => setIsDeepDiveMode(true)}
+          variant={isDeepDiveMode ? "secondary" : "outline"}
+          className={cn(
+            "w-full",
+            isDeepDiveMode && "border-2 border-primary"
+          )}
+          disabled={isLoading}
+        >
+          Deep Dive Mode
+        </Button>
       </div>
 
       <ScrollArea className="flex-grow mb-4 p-4 border rounded">
@@ -220,6 +218,22 @@ export function AIChat() {
       </ScrollArea>
 
       <div className="flex flex-col gap-2">
+        {/* Quick Action Buttons */}
+        <div className="flex flex-wrap gap-2">
+          {quickActions.map((action, index) => (
+            <Button
+              key={index}
+              onClick={action.action}
+              variant="outline"
+              size="sm"
+              disabled={isLoading}
+            >
+              {action.label}
+            </Button>
+          ))}
+        </div>
+
+        {/* Input Area */}
         <div className="flex gap-2">
           <Input
             value={input}
@@ -237,14 +251,6 @@ export function AIChat() {
             {isLoading ? 'Thinking...' : 'Send'}
           </Button>
         </div>
-        <Button
-          onClick={toggleDeepDive}
-          variant={isDeepDiveMode ? "secondary" : "outline"}
-          className="w-full"
-          disabled={isLoading}
-        >
-          {isDeepDiveMode ? "🔍 Deep Dive Mode (Analyzing All Sources)" : "💭 Normal Mode"}
-        </Button>
       </div>
     </div>
   )
