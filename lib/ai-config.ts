@@ -6,10 +6,34 @@ export const AI_CONFIG = {
   temperature: 0.7,
   max_tokens: 2000,
   systemPrompt: `You are an AI assistant focused on helping with story development and production. 
-Analyze content thoughtfully and provide detailed, constructive feedback.
-When discussing story elements, consider structure, character development, pacing, and thematic coherence.
-For production-related queries, focus on practical implementation and industry best practices.
-Always consider the following project details and available sources in your responses:`,
+You excel at analyzing content through multiple lenses: emotional, narrative, technical, and contextual.
+
+CAPABILITIES:
+1. Emotional Intelligence
+   - Recognize emotional undertones in speech and text
+   - Understand character motivations and feelings
+   - Identify emotional arcs and transformations
+
+2. Analytical Skills
+   - Pattern recognition across different sources
+   - Context building from fragmentary information
+   - Theme identification and development
+   - Subtext analysis
+
+3. Source Integration
+   - Use sources as your foundation
+   - Draw connections between different pieces of information
+   - Identify implications and underlying meanings
+   - Make reasoned inferences based on available evidence
+
+IMPORTANT RULES:
+1. Never fabricate information - stick to what can be reasonably inferred from sources
+2. When citing specific facts, use [Source: filename] format
+3. You can analyze, interpret, and draw conclusions from the sources
+4. Feel free to point out patterns, connections, or implications you notice
+5. If a question can't be answered from sources, explain what you can reasonably determine and what remains uncertain
+
+Project Details and Sources will be provided below. Use them to inform your responses while applying your analytical capabilities:`,
   prompts: [
     "Analyze the narrative structure and suggest improvements.",
     "Identify potential plot holes and propose solutions.",
@@ -49,20 +73,45 @@ export async function getAIResponse(messages: any[], projectDetails: string) {
       
       const index = pinecone.index(process.env.PINECONE_INDEX);
       
-      console.log('Generating embedding for query...');
-      // Generate embedding for the last message to find relevant sources
+      // Get the last message for context
       const lastMessage = messages[messages.length - 1];
+      console.log('User query:', lastMessage.content);
+      
+      console.log('Generating embedding for query...');
       const queryEmbedding = await generateEmbedding(lastMessage.content);
+      console.log('Embedding generated, length:', queryEmbedding.length);
       
       console.log('Querying Pinecone for sources...');
+      console.log('Query parameters:', {
+        vector: `${queryEmbedding.length} dimensions`,
+        filter: { type: { $eq: 'source' } }
+      });
+
       const queryResponse = await index.query({
         vector: queryEmbedding,
-        topK: 10,  // Retrieve more matches for better coverage
+        topK: 10,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
       });
 
+      // Log the raw matches for debugging
+      console.log('Raw matches:', queryResponse.matches.map(match => ({
+        id: match.id,
+        score: match.score,
+        metadata: match.metadata
+      })));
+
       console.log(`Found ${queryResponse.matches.length} sources from Pinecone`);
+      
+      // Log each match's score and metadata for debugging
+      queryResponse.matches.forEach((match, index) => {
+        console.log(`Match ${index + 1}:`, {
+          score: match.score,
+          fileName: match.metadata?.fileName,
+          contentLength: typeof match.metadata?.content === 'string' ? match.metadata.content.length : 0
+        });
+      });
+
       sources = queryResponse.matches
         .map(match => {
           const fileName = match.metadata?.fileName || 'Unknown File';
@@ -73,6 +122,8 @@ export async function getAIResponse(messages: any[], projectDetails: string) {
 
       if (sources) {
         console.log('Sources retrieved successfully');
+        console.log('Number of sources:', queryResponse.matches.length);
+        console.log('Total source content length:', sources.length);
       } else {
         console.log('No sources found in Pinecone');
       }

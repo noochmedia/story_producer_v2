@@ -90,12 +90,38 @@ export async function POST(request: NextRequest) {
       contentLength: metadata.content.length
     });
 
-    console.log('Upserting to Pinecone...');
-    await index.upsert([{
+    console.log('Upserting to Pinecone with metadata:', {
+      id,
+      fileName: metadata.fileName,
+      fileType: metadata.fileType,
+      type: metadata.type,
+      contentLength: metadata.content.length
+    });
+
+    const upsertData = {
       id,
       values: embedding,
       metadata
-    }])
+    };
+
+    await index.upsert([upsertData]);
+    
+    // Verify the upsert by querying for the document
+    const verifyQuery = await index.query({
+      vector: embedding,
+      topK: 1,
+      includeMetadata: true,
+      filter: { type: { $eq: 'source' } }
+    });
+
+    console.log('Verification query results:', {
+      matchesFound: verifyQuery.matches.length,
+      firstMatch: verifyQuery.matches[0] ? {
+        score: verifyQuery.matches[0].score,
+        metadata: verifyQuery.matches[0].metadata
+      } : 'No matches'
+    });
+
     console.log('Successfully upserted to Pinecone');
 
     return NextResponse.json({ 
