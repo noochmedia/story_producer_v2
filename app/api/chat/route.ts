@@ -17,16 +17,10 @@ export async function POST(req: Request) {
 Project Details: ${projectDetails || 'No project details available'}
 
 Available Sources:
-${sources || 'No sources available'}
-
-Available Prompts:
-${Array.isArray(prompts) ? prompts.map((prompt: string, index: number) => `${index + 1}. ${prompt}`).join('\n') : ''}
-
-IMPORTANT: Always refer to and use the provided sources in your responses. If relevant information is available in the sources, incorporate it into your answer.`
+${sources || 'No sources available'}`
 
   console.log('System message length:', systemMessage.length);
   console.log('First 500 chars of system message:', systemMessage.substring(0, 500));
-  console.log('Last 500 chars of system message:', systemMessage.substring(systemMessage.length - 500));
 
   console.log('Sending request to DeepSeek API...');
   const response = await fetch('https://api.deepinfra.com/v1/openai/chat/completions', {
@@ -68,36 +62,50 @@ IMPORTANT: Always refer to and use the provided sources in your responses. If re
         async start(controller) {
           try {
             // Send initial "thinking" message
-            controller.enqueue(encoder.encode('Analyzing sources and formulating response...\n\n'));
+            controller.enqueue(encoder.encode('Let me analyze that for you...\n\n'));
 
             while (true) {
               const { done, value } = await reader.read();
               if (done) break;
 
               const chunk = decoder.decode(value);
+              console.log('Received chunk:', chunk);
+
               const lines = chunk
                 .split('\n')
                 .filter(line => line.trim() !== '');
 
               for (const line of lines) {
+                console.log('Processing line:', line);
+                
                 if (line.startsWith('data: ')) {
                   const data = line.slice(6);
                   if (data === '[DONE]') {
+                    console.log('Received [DONE] signal');
                     controller.close();
                     return;
                   }
                   try {
                     const parsed = JSON.parse(data);
-                    // Handle both OpenAI and DeepSeek response formats
-                    const text = parsed.choices?.[0]?.delta?.content || 
-                               parsed.choices?.[0]?.text ||
-                               '';
+                    console.log('Parsed response:', parsed);
+                    
+                    // Try different response formats
+                    let text = '';
+                    if (parsed.choices?.[0]?.delta?.content) {
+                      text = parsed.choices[0].delta.content;
+                    } else if (parsed.choices?.[0]?.text) {
+                      text = parsed.choices[0].text;
+                    } else if (typeof parsed === 'string') {
+                      text = parsed;
+                    }
+
                     if (text) {
+                      console.log('Sending text:', text);
                       controller.enqueue(encoder.encode(text));
                     }
                   } catch (e) {
                     console.error('Error parsing streaming response:', e);
-                    console.log('Problematic chunk:', line);
+                    console.log('Problematic data:', data);
                   }
                 }
               }
