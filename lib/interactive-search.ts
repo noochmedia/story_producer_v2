@@ -1,21 +1,8 @@
 import { ScoredPineconeRecord } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
-
-interface SourceMetadata {
-  fileName?: string;
-  content?: string;
-  type?: string;
-  [key: string]: any;
-}
+import { SourceMetadata } from './types';
 
 type PineconeMatch = ScoredPineconeRecord<SourceMetadata>;
-
-interface SearchCategory {
-  category: string;
-  description: string;
-  sourceCount: number;
-  examples: string[];
-}
 
 export async function analyzeSourceCategories(
   sources: PineconeMatch[],
@@ -36,7 +23,7 @@ export async function analyzeSourceCategories(
     messages: [
       {
         role: 'system',
-        content: `You are analyzing interview transcripts to identify different categories of information available about: ${query}
+        content: `You are analyzing interview transcripts to identify different categories of information about: ${query}
 
 Your task is to:
 1. Identify distinct types of information present

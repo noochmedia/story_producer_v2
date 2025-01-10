@@ -1,12 +1,6 @@
 import { ScoredPineconeRecord } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
-
-interface SourceMetadata {
-  fileName?: string;
-  content?: string;
-  type?: string;
-  [key: string]: any;
-}
+import { SourceMetadata } from './types';
 
 type PineconeMatch = ScoredPineconeRecord<SourceMetadata>;
 
@@ -48,7 +42,7 @@ export async function processSourcesInChunks(
   let combinedAnalysis = '';
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
-    controller.enqueue(new TextEncoder().encode(`[STAGE:Analyzing sources (part ${i + 1} of ${chunks.length})]`));
+    controller.enqueue(new TextEncoder().encode(`[STAGE:Analyzing sources (part ${i + 1} of ${chunks.length})]\n\n`));
 
     // Create a summary prompt for this chunk
     const chunkContent = chunk
