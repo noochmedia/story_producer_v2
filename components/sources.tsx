@@ -15,11 +15,11 @@ export function Sources() {
     const files = Array.from(event.target.files);
     
     try {
-      // Create FormData with multiple files
+      // Create FormData with file
       const formData = new FormData()
-      files.forEach(file => {
-        formData.append('files', file)
-      })
+      // For now, just upload the first file
+      const file = files[0] as File
+      formData.append('file', file)
 
       const response = await fetch('/api/upload', {
         method: 'POST',
@@ -34,7 +34,7 @@ export function Sources() {
       
       toast({
         title: "Success",
-        description: `${files.length} file${files.length === 1 ? '' : 's'} uploaded successfully.`,
+        description: "File uploaded successfully",
       })
     } catch (error) {
       console.error('Error uploading files:', error)
