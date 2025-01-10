@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { Button } from "./ui/button"
 import { useToast } from "./ui/use-toast"
+import { Upload } from 'lucide-react'
 
 interface Source {
   id: string;
@@ -53,7 +54,7 @@ export function Sources() {
       // Create FormData with multiple files
       const formData = new FormData()
       files.forEach(file => {
-        formData.append('files', file)
+        formData.append('files', file as File)
       })
 
       const response = await fetch('/api/upload', {
@@ -89,7 +90,7 @@ export function Sources() {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold">Upload Sources</h2>
+        <h2 className="text-lg font-semibold">Sources</h2>
         <div className="space-x-2">
           <Button
             variant="outline"
@@ -107,21 +108,19 @@ export function Sources() {
         </div>
       </div>
       
-      <div className="flex items-center gap-4">
-        <Button
-          onClick={() => document.getElementById('file-upload')?.click()}
-          disabled={isUploading}
-        >
-          {isUploading ? 'Uploading...' : 'Select Files'}
-        </Button>
+      <div className="flex items-center justify-center border-2 border-dashed rounded-lg p-4">
         <input
-          id="file-upload"
           type="file"
-          multiple // Enable multiple file selection
-          onChange={handleUpload}
           className="hidden"
-          accept=".txt,.pdf,.docx" // Accept common text and document formats
+          id="file-upload"
+          onChange={handleUpload}
+          multiple
+          accept=".txt,.pdf,.docx"
         />
+        <label htmlFor="file-upload" className="flex flex-col items-center cursor-pointer">
+          <Upload className="h-6 w-6 text-muted-foreground mb-1" />
+          <span className="text-xs text-muted-foreground">Drag and drop or click to upload</span>
+        </label>
       </div>
 
       {showSources && (
@@ -129,13 +128,10 @@ export function Sources() {
           {isLoading ? (
             <p>Loading sources...</p>
           ) : sources.length > 0 ? (
-            <div className="space-y-4">
+            <div className="space-y-2">
               {sources.map((source) => (
-                <div key={source.id} className="p-4 border rounded-lg">
+                <div key={source.id} className="p-2 border rounded-lg">
                   <h3 className="font-medium">{source.name}</h3>
-                  <p className="text-sm text-muted-foreground mt-2">
-                    {source.content.substring(0, 200)}...
-                  </p>
                 </div>
               ))}
             </div>
