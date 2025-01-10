@@ -41,7 +41,19 @@ export async function POST(request: NextRequest) {
 
     // Get form data with multiple files
     const formData = await request.formData()
+    console.log('FormData entries:', Array.from(formData.entries()).map(([key, value]) => ({
+      key,
+      type: value instanceof File ? 'File' : typeof value,
+      fileName: value instanceof File ? value.name : null
+    })));
+
     const files = formData.getAll('files') as File[]
+    console.log('Files array length:', files.length);
+    console.log('Files details:', files.map(f => ({
+      name: f.name,
+      type: f.type,
+      size: f.size
+    })));
 
     if (!files.length) {
       return NextResponse.json({ error: 'No files provided' }, { status: 400 })
