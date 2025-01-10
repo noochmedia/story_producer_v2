@@ -1,4 +1,5 @@
 import { ChatMessage } from './types';
+import { AI_CONFIG } from './ai-config';
 
 interface OpenRouterResponse {
   choices: {
@@ -34,13 +35,18 @@ export class OpenRouterClient {
     stream?: boolean;
     response_format?: { type: string };
   }) {
+    const estimatedTokens = OpenRouterClient.estimateTokens(
+      params.messages.map(m => m.content).join('\n')
+    );
+
+    // Use Claude-2 for large content, otherwise use gpt-4o
+    const defaultModel = estimatedTokens > 30000 ? 'anthropic/claude-2' : AI_CONFIG.model;
+
     console.log('OpenRouter Request:', {
-      model: params.model || 'anthropic/claude-2',
+      model: params.model || defaultModel,
       messageCount: params.messages.length,
       stream: params.stream,
-      estimatedTokens: OpenRouterClient.estimateTokens(
-        params.messages.map(m => m.content).join('\n')
-      )
+      estimatedTokens
     });
 
     const response = await fetch(`${this.baseURL}/chat/completions`, {
@@ -53,7 +59,7 @@ export class OpenRouterClient {
       },
       body: JSON.stringify({
         ...params,
-        model: params.model || 'anthropic/claude-2',
+        model: params.model || defaultModel,
         response_format: { type: "text" }
       })
     });
@@ -146,21 +152,14 @@ export class OpenRouterClient {
     const estimatedTokens = this.estimateTokens(content);
     console.log('OpenRouter: Estimated tokens:', estimatedTokens);
     
-    const models = await client.getModels();
-    console.log('OpenRouter: Finding suitable model for tokens:', estimatedTokens);
-
-    const sortedModels = models.sort((a, b) => 
-      (b.context_length || 0) - (a.context_length || 0)
-    );
-
-    for (const model of sortedModels) {
-      if ((model.context_length || 0) >= estimatedTokens) {
-        console.log('OpenRouter: Selected model:', model.id, 'with context length:', model.context_length);
-        return model.id;
-      }
+    // For large content, use Claude-2
+    if (estimatedTokens > 30000) {
+      console.log('OpenRouter: Using Claude-2 for large content');
+      return 'anthropic/claude-2';
     }
 
-    console.log('OpenRouter: Defaulting to Claude-2');
-    return 'anthropic/claude-2';
+    // Otherwise use gpt-4o
+    console.log('OpenRouter: Using gpt-4o for standard content');
+    return AI_CONFIG.model;
   }
 }

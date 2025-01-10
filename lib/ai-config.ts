@@ -1,5 +1,5 @@
 export const AI_CONFIG = {
-  model: "deepseek-ai/DeepSeek-V3",
+  model: "gpt-4o",
   temperature: 0.7,
   max_tokens: 2000,
   systemPrompt: `I am Reflect 1.0 (Beta), an AI with a deep appreciation for storytelling and narrative analysis. I combine analytical precision with creative insight to help develop and understand stories.
