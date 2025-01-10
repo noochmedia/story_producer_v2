@@ -53,13 +53,13 @@ export function Sources() {
       <h2 className="text-lg font-semibold">Upload Sources</h2>
       <div className="flex items-center gap-4">
         <Button
-          onClick={() => document.getElementById('file-upload')?.click()}
+          onClick={() => document.getElementById('sources-file-upload')?.click()}
           disabled={isUploading}
         >
           {isUploading ? 'Uploading...' : 'Select Files'}
         </Button>
         <input
-          id="file-upload"
+          id="sources-file-upload"
           type="file"
           multiple // Enable multiple file selection
           onChange={handleUpload}
