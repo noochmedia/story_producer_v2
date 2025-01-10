@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { Button } from "./ui/button"
 import { useToast } from "./ui/use-toast"
+import { Loader2 } from 'lucide-react'
 
 interface Source {
   id: string;
@@ -10,16 +11,19 @@ interface Source {
   type: string;
   url: string;
   content: string;
+  uploadedAt?: string;
 }
 
 export function Sources() {
   const [isLoading, setIsLoading] = useState(true)
+  const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [sources, setSources] = useState<Source[]>([])
   const [showSources, setShowSources] = useState(true)
   const { toast } = useToast()
 
   const fetchSources = async () => {
     try {
+      setIsLoading(true)
       const response = await fetch('/api/sources')
       if (!response.ok) {
         throw new Error('Failed to fetch sources')
@@ -42,6 +46,29 @@ export function Sources() {
     fetchSources()
   }, [])
 
+  // Listen for analysis state changes
+  useEffect(() => {
+    const eventSource = new EventSource('/api/sources/status')
+    
+    eventSource.onmessage = (event) => {
+      const data = JSON.parse(event.data)
+      if (data.status === 'analyzing') {
+        setIsAnalyzing(true)
+      } else if (data.status === 'complete') {
+        setIsAnalyzing(false)
+        fetchSources() // Refresh sources after analysis
+      }
+    }
+
+    eventSource.onerror = () => {
+      eventSource.close()
+    }
+
+    return () => {
+      eventSource.close()
+    }
+  }, [])
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
@@ -56,9 +83,21 @@ export function Sources() {
           <Button
             variant="outline"
             onClick={fetchSources}
-            disabled={isLoading}
+            disabled={isLoading || isAnalyzing}
           >
-            Refresh Sources
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading...
+              </>
+            ) : isAnalyzing ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Analyzing...
+              </>
+            ) : (
+              'Refresh Sources'
+            )}
           </Button>
         </div>
       </div>
@@ -66,17 +105,35 @@ export function Sources() {
       {showSources && (
         <div className="space-y-2">
           {isLoading ? (
-            <p>Loading sources...</p>
+            <div className="flex items-center justify-center p-4">
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              <p>Loading sources...</p>
+            </div>
           ) : sources.length > 0 ? (
             <div className="space-y-2">
               {sources.map((source) => (
-                <div key={source.id} className="p-2 border rounded-lg">
-                  <h3 className="font-medium">{source.name}</h3>
+                <div key={source.id} className="p-3 border rounded-lg space-y-1">
+                  <div className="flex justify-between items-start">
+                    <h3 className="font-medium">{source.name}</h3>
+                    {source.uploadedAt && (
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(source.uploadedAt).toLocaleString()}
+                      </span>
+                    )}
+                  </div>
+                  {source.type && (
+                    <p className="text-sm text-muted-foreground">
+                      Type: {source.type}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
           ) : (
-            <p>No sources uploaded yet.</p>
+            <div className="text-center p-4 border rounded-lg">
+              <p className="text-muted-foreground">No sources uploaded yet.</p>
+              <p className="text-sm mt-1">Upload files to get started.</p>
+            </div>
           )}
         </div>
       )}

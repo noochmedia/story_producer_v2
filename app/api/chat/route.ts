@@ -171,14 +171,33 @@ export async function POST(req: Request) {
               systemMessage = getBaseSystemMessage(projectDetails);
 
               if (deepDive) {
-                // Get initial context from Pinecone
-                relevantSources = await queryPineconeForContext(
-                  userMessage.content,
-                  'Searching relevant information',
-                  controller
-                );
+                console.log('Starting source search for:', userMessage.content);
+                try {
+                  // Update status to analyzing
+                  const { updateStatus } = await import('../sources/status/route');
+                  updateStatus('analyzing');
 
+                  // Get initial context from Pinecone
+                  relevantSources = await queryPineconeForContext(
+                    userMessage.content,
+                    'Searching relevant information',
+                    controller
+                  );
+                  console.log('Source search completed, found sources:', relevantSources.length);
+
+                  // Update status to complete
+                  updateStatus('complete');
+                } catch (searchError) {
+                  console.error('Error in source search:', searchError);
+                  // Update status to idle on error
+                  const { updateStatus } = await import('../sources/status/route');
+                  updateStatus('idle');
+                  throw searchError;
+                }
+
+                console.log('Processing sources, count:', relevantSources.length);
                 if (relevantSources.length > 0) {
+                  console.log('Starting content analysis');
                   // Check if this is a follow-up to a previous analysis
                   const isFollowUp = userMessage.content.toLowerCase().includes('option') || 
                                    userMessage.content.toLowerCase().includes('category') ||
@@ -190,10 +209,12 @@ export async function POST(req: Request) {
                     .join('\n\n');
 
                   // Choose appropriate model based on content size
-                  const useOpenRouter = OpenRouterClient.estimateTokens(allContent) > 30000;
+                  const estimatedTokens = OpenRouterClient.estimateTokens(allContent);
+                  console.log('Estimated tokens:', estimatedTokens);
+                  const useOpenRouter = estimatedTokens > 30000;
 
                   if (useOpenRouter) {
-                    console.log('Using OpenRouter due to content size');
+                    console.log('Using OpenRouter due to content size:', estimatedTokens, 'tokens');
                     const model = await OpenRouterClient.chooseModel(allContent, openrouter);
                     console.log('Selected model:', model);
 
@@ -220,6 +241,7 @@ export async function POST(req: Request) {
                       }
                     } else {
                       // Start new analysis with OpenRouter
+                      console.log('Starting OpenRouter analysis with model:', model);
                       const response = await openrouter.createChatCompletion({
                         messages: [
                           {
