@@ -24,10 +24,20 @@ export async function analyzeSourceCategories(
   openai: OpenAI,
   controller: ReadableStreamDefaultController
 ) {
-  controller.enqueue(new TextEncoder().encode('[STAGE:Analyzing available information]\n\n'));
+  try {
+    controller.enqueue(new TextEncoder().encode('[STAGE:Analyzing available information]\n\n'));
+    console.log('Starting initial analysis with sources:', sources.length);
 
-  // First do an initial analysis of the query
-  const initialResponse = await openai.chat.completions.create({
+    // Combine content for analysis
+    const allContent = sources
+      .map(source => source.metadata?.content || '')
+      .join('\n\n');
+
+    console.log('Combined content length:', allContent.length);
+    console.log('Starting OpenAI completion');
+
+    // First do an initial analysis of the query
+    const initialResponse = await openai.chat.completions.create({
     model: AI_CONFIG.model,
     messages: [
       {
@@ -58,9 +68,10 @@ Format your response with:
     stream: true
   });
 
-  // Stream the initial analysis
-  let initialAnalysis = '';
-  for await (const chunk of initialResponse) {
+    // Stream the initial analysis
+    console.log('Streaming initial analysis');
+    let initialAnalysis = '';
+    for await (const chunk of initialResponse) {
     const content = chunk.choices[0]?.delta?.content || '';
     if (content) {
       const formattedContent = content
@@ -71,14 +82,23 @@ Format your response with:
     }
   }
 
-  // Add prompt for further exploration
-  controller.enqueue(new TextEncoder().encode('\n\nWould you like to explore any specific aspect in more detail? You can:\n\n'));
+    console.log('Initial analysis complete, length:', initialAnalysis.length);
+
+    // Add prompt for further exploration
+    controller.enqueue(new TextEncoder().encode('\n\nWould you like to explore any specific aspect in more detail? You can:\n\n'));
   controller.enqueue(new TextEncoder().encode('1. Get more details about a specific theme\n'));
   controller.enqueue(new TextEncoder().encode('2. See how different perspectives compare\n'));
   controller.enqueue(new TextEncoder().encode('3. Look at the timeline of events\n'));
   controller.enqueue(new TextEncoder().encode('4. Focus on specific examples or quotes\n\n'));
 
-  return initialAnalysis;
+    console.log('Analysis complete, returning result');
+    return initialAnalysis;
+  } catch (error) {
+    console.error('Error in analyzeSourceCategories:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    controller.enqueue(new TextEncoder().encode(`Error analyzing sources: ${errorMessage}. Please try again or rephrase your question.`));
+    throw error;
+  }
 }
 
 export async function processUserChoice(
