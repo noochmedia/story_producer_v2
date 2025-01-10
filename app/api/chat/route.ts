@@ -3,6 +3,8 @@ import { AI_CONFIG } from '../../../lib/ai-config'
 import { Pinecone, ScoredPineconeRecord } from '@pinecone-database/pinecone'
 import { generateEmbedding } from '../../../lib/document-processing'
 import { queryMemory, storeMemory, formatMemoryForAI } from '../../../lib/ai-memory'
+import { analyzeSourceCategories, processUserChoice, createFinalSummary } from '../../../lib/interactive-search'
+import { OpenRouterClient } from '../../../lib/openrouter-client'
 import OpenAI from 'openai'
 
 interface SourceMetadata {
@@ -144,14 +146,17 @@ export async function POST(req: Request) {
     const userMessage = messages[messages.length - 1];
     console.log('User query:', userMessage.content);
 
-    // Initialize OpenAI client
+    // Initialize clients
     const openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY
     });
 
+    const openrouter = new OpenRouterClient(process.env.OPENROUTER_API_KEY || '');
+
     // Prepare system message based on mode
     let systemMessage = '';
     let relevantSources: PineconeMatch[] = [];
+    let previousAnalyses: string[] = [];
     
     if (stream) {
       return new Response(
@@ -174,248 +179,171 @@ export async function POST(req: Request) {
                 );
 
                 if (relevantSources.length > 0) {
-                  if (isSoundbiteRequest) {
-                    const isFindSoundbite = userMessage.content.startsWith("What theme, idea, or statement type would you like?");
-                    
-                    systemMessage += `
-You are a professional video editor searching through interview transcripts ${isFindSoundbite ? 'to find relevant soundbites' : 'to create specific soundbites'}. Your task is to ${isFindSoundbite ? 'identify quotes that match the requested theme or topic' : 'find quotes that best match the requested soundbite and speaker'}.
+                  // Check if this is a follow-up to a previous analysis
+                  const isFollowUp = userMessage.content.toLowerCase().includes('option') || 
+                                   userMessage.content.toLowerCase().includes('category') ||
+                                   userMessage.content.match(/^[1-4]$/);
 
-Here are the relevant interview excerpts:
+                  // Combine all source content to check size
+                  const allContent = relevantSources
+                    .map(source => source.metadata?.content || '')
+                    .join('\n\n');
 
-${relevantSources.map(source => 
-  `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || 'No content available'}`
-).join('\n\n')}
+                  // Choose appropriate model based on content size
+                  const useOpenRouter = OpenRouterClient.estimateTokens(allContent) > 30000;
 
-Response Format:
--------------------
-For each soundbite, provide:
+                  if (useOpenRouter) {
+                    console.log('Using OpenRouter due to content size');
+                    const model = await OpenRouterClient.chooseModel(allContent, openrouter);
+                    console.log('Selected model:', model);
 
-1. Source: [Filename]
-2. Timecode: [Exact timestamp]
-3. Quote: "[Exact quote from source]"
-4. Context: Brief explanation of the quote's significance
+                    if (isFollowUp && messages.length > 2) {
+                      // Process the user's choice
+                      const analysis = await processUserChoice(
+                        userMessage.content,
+                        relevantSources,
+                        messages[messages.length - 2].content,
+                        openai,
+                        controller
+                      );
+                      previousAnalyses.push(analysis);
 
-Critical Requirements:
-- Only use EXACT quotes from the sources
-- Include PRECISE timestamps
-- Never modify or paraphrase quotes
-- If no suitable quotes found, clearly state this
-- Double-check quote accuracy
-- Ensure timestamps match the quotes
+                      // If user requests final summary
+                      if (userMessage.content.toLowerCase().includes('summary') || 
+                          userMessage.content === '4') {
+                        await createFinalSummary(
+                          previousAnalyses,
+                          messages[0].content,
+                          openai,
+                          controller
+                        );
+                      }
+                    } else {
+                      // Start new analysis with OpenRouter
+                      const response = await openrouter.createChatCompletion({
+                        messages: [
+                          {
+                            role: 'system',
+                            content: `You are analyzing interview transcripts to identify different categories of information about: ${userMessage.content}
 
-${isFindSoundbite ? `
-Search Strategy:
-- Look for quotes that express the requested theme
-- Consider both direct and indirect expressions of the theme
-- Note any contextual elements that enhance the quote's meaning
-- Group related quotes if they build on the same idea` : `
-Creation Strategy:
-- Find quotes that best match the requested soundbite concept
-- Consider the speaker's unique voice and perspective
-- Look for natural, authentic expressions
-- Identify quotes that capture the intended meaning`}`;
-                  } else if (userMessage.content.startsWith("Who would you like a character brief on?")) {
-                    systemMessage += `
-You are a professional story analyst creating a detailed character profile. Your task is to analyze all available information about the specified character from the interview transcripts.
+Your task is to:
+1. Identify distinct types of information present
+2. Provide brief examples for each type
+3. Note how many sources mention each type
+4. Suggest specific aspects to explore
 
-Here are the relevant interview excerpts:
+Format your response as a structured list of categories, each with:
+- Category name
+- Brief description
+- Number of sources
+- Example quotes or mentions`
+                          },
+                          {
+                            role: 'user',
+                            content: allContent
+                          }
+                        ],
+                        model,
+                        stream: true
+                      });
 
-${relevantSources.map(source => 
-  `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || 'No content available'}`
-).join('\n\n')}
+                      if (response) {
+                        for await (const chunk of OpenRouterClient.processStream(response)) {
+                          const formattedContent = chunk
+                            .replace(/\.\s+/g, '.\n\n')
+                            .replace(/:\s+/g, ':\n');
+                          controller.enqueue(new TextEncoder().encode(formattedContent));
+                        }
+                      }
 
-Format your response as follows:
-
-CHARACTER PROFILE
-----------------
-
-Overview:
-[2-3 sentences introducing the character]
-
-Key Characteristics:
-• [Trait 1]
-• [Trait 2]
-• etc.
-
-Notable Quotes:
-[Include exact quotes with timestamps that reveal character]
-
-Relationships:
-[Describe connections to other characters]
-
-Background:
-[Key events and experiences]
-
-Analysis:
-[Deeper insights about the character]
-
-Remember to:
-- Support all points with exact quotes
-- Include timestamps for quotes
-- Focus on factual information from sources
-- Note any conflicting information
-- Maintain objective analysis`;
-                  } else if (userMessage.content.includes("relationship map")) {
-                    systemMessage += `
-You are a professional story analyst mapping character relationships. Your task is to analyze the connections between characters mentioned in the interview transcripts.
-
-Here are the relevant interview excerpts:
-
-${relevantSources.map(source => 
-  `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || 'No content available'}`
-).join('\n\n')}
-
-Format your response as follows:
-
-RELATIONSHIP MAP
----------------
-
-Overview:
-[Brief summary of key relationships]
-
-Key Relationships:
-
-[Character 1] ↔ [Character 2]
-• Nature of Relationship
-• Key Interactions
-• Supporting Quote: "[exact quote]" [timestamp]
-
-[Continue for each significant relationship pair]
-
-Group Dynamics:
-[Analysis of larger group interactions]
-
-Timeline:
-[How relationships evolved]
-
-Remember to:
-- Support each relationship with quotes
-- Include timestamps
-- Focus on direct evidence
-- Note relationship changes
-- Indicate relationship strength`;
-                  } else if (userMessage.content.includes("timeline")) {
-                    systemMessage += `
-You are a professional story analyst creating a chronological timeline. Your task is to organize events mentioned in the interview transcripts.
-
-Here are the relevant interview excerpts:
-
-${relevantSources.map(source => 
-  `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || 'No content available'}`
-).join('\n\n')}
-
-Format your response as follows:
-
-CHRONOLOGICAL TIMELINE
----------------------
-
-Overview:
-[Brief summary of the time period covered]
-
-Events:
-
-[Date/Period 1]
-• Event: [Description]
-• Source: [Filename]
-• Quote: "[exact quote]" [timestamp]
-
-[Continue chronologically]
-
-Key Periods:
-[Identify significant time spans]
-
-Patterns:
-[Note recurring events or themes]
-
-Remember to:
-- Order events chronologically
-- Include exact quotes and timestamps
-- Note any timeline uncertainties
-- Connect related events
-- Highlight key moments`;
+                      // Add options for user
+                      controller.enqueue(new TextEncoder().encode('\n\nWhich aspect would you like to explore in detail? You can:\n\n'));
+                      controller.enqueue(new TextEncoder().encode('1. Choose a specific category to dive deeper\n'));
+                      controller.enqueue(new TextEncoder().encode('2. Ask about relationships between categories\n'));
+                      controller.enqueue(new TextEncoder().encode('3. Request a timeline of events\n'));
+                      controller.enqueue(new TextEncoder().encode('4. Focus on specific quotes or examples\n\n'));
+                      controller.enqueue(new TextEncoder().encode('Please let me know how you\'d like to proceed.\n'));
+                    }
                   } else {
-                    systemMessage += `
-Here are the relevant interview excerpts:
+                    // Use regular OpenAI for smaller content
+                    if (isFollowUp && messages.length > 2) {
+                      const analysis = await processUserChoice(
+                        userMessage.content,
+                        relevantSources,
+                        messages[messages.length - 2].content,
+                        openai,
+                        controller
+                      );
+                      previousAnalyses.push(analysis);
 
-${relevantSources.map(source => 
-  `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || 'No content available'}`
-).join('\n\n')}
-
-Previous Analyses:
-${memoryContext}
-
-Analyze these interview excerpts carefully and provide a detailed response to the user's question. 
-
-Format your response with clear structure and spacing:
-
-1. Start with a brief overview/introduction (2-3 sentences)
-
-2. Main Analysis:
-   - Break down your analysis into clear sections
-   - Use bullet points for key insights
-   - Start new paragraphs for new ideas
-   - Add a blank line between sections
-
-3. When quoting sources:
-   - Put the quote on its own line
-   - Include the source name
-   - Add your analysis below the quote
-
-4. If drawing connections:
-   - Clearly state the relationship
-   - Explain the significance
-   - Use examples from the sources
-
-5. End with a conclusion section that summarizes the key points
-
-Remember to:
-- Use clear headings for sections
-- Add blank lines between sections
-- Use bullet points for lists
-- Keep paragraphs focused and separated
-- Make quotes stand out visually
-
-If you find relevant information in the sources, incorporate it into your response and explain its significance. If you don't find a direct answer, explain what you can infer from the available information.`;
+                      if (userMessage.content.toLowerCase().includes('summary') || 
+                          userMessage.content === '4') {
+                        await createFinalSummary(
+                          previousAnalyses,
+                          messages[0].content,
+                          openai,
+                          controller
+                        );
+                      }
+                    } else {
+                      const analysis = await analyzeSourceCategories(
+                        relevantSources,
+                        userMessage.content,
+                        openai,
+                        controller
+                      );
+                      previousAnalyses.push(analysis);
+                    }
                   }
                 } else {
                   console.log('No relevant sources found');
                   systemMessage += `\nI've searched the interview transcripts but couldn't find any relevant information about that specific topic. Let me know if you'd like to know about something else from the interviews.`;
+                  
+                  const response = await openai.chat.completions.create({
+                    model: "gpt-4o",
+                    messages: [
+                      { role: 'system', content: systemMessage },
+                      ...messages.slice(-5)
+                    ],
+                    response_format: { type: "text" },
+                    temperature: 0.58,
+                    max_tokens: 2000,
+                    stream: true
+                  });
+
+                  for await (const chunk of response) {
+                    const content = chunk.choices[0]?.delta?.content || '';
+                    if (content) {
+                      const formattedContent = content
+                        .replace(/\.\s+/g, '.\n\n')
+                        .replace(/:\s+/g, ':\n');
+                      controller.enqueue(new TextEncoder().encode(formattedContent));
+                    }
+                  }
                 }
               } else {
                 systemMessage += `\nNote that I'm not currently using the interview transcripts. If you'd like me to check the transcripts, please enable the "Use sources" option.`;
-              }
+                
+                const response = await openai.chat.completions.create({
+                  model: "gpt-4o",
+                  messages: [
+                    { role: 'system', content: systemMessage },
+                    ...messages.slice(-5)
+                  ],
+                  response_format: { type: "text" },
+                  temperature: 0.58,
+                  max_tokens: 2000,
+                  stream: true
+                });
 
-              console.log('System message prepared:', {
-                length: systemMessage.length,
-                includesSources: relevantSources.length > 0,
-                sourcesCount: relevantSources.length,
-                isSoundbiteRequest,
-                hasProjectDetails: !!projectDetails
-              });
-
-              const stream = await openai.chat.completions.create({
-                model: "gpt-4o",
-                messages: [
-                  { role: 'system', content: systemMessage },
-                  ...messages.slice(-5) // Only include last 5 messages to reduce context
-                ],
-                response_format: { type: "text" },
-                temperature: 0.58,
-                max_tokens: 12317,
-                top_p: 1,
-                frequency_penalty: 0,
-                presence_penalty: 0,
-                stream: true
-              });
-
-              for await (const chunk of stream) {
-                const content = chunk.choices[0]?.delta?.content || '';
-                if (content) {
-                  // Add newlines after periods and colons for better formatting
-                  const formattedContent = content
-                    .replace(/\.\s+/g, '.\n\n')
-                    .replace(/:\s+/g, ':\n');
-                  controller.enqueue(new TextEncoder().encode(formattedContent));
+                for await (const chunk of response) {
+                  const content = chunk.choices[0]?.delta?.content || '';
+                  if (content) {
+                    const formattedContent = content
+                      .replace(/\.\s+/g, '.\n\n')
+                      .replace(/:\s+/g, ':\n');
+                    controller.enqueue(new TextEncoder().encode(formattedContent));
+                  }
                 }
               }
 
@@ -446,7 +374,7 @@ If you find relevant information in the sources, incorporate it into your respon
       ],
       response_format: { type: "text" },
       temperature: 0.58,
-      max_tokens: 12317,
+      max_tokens: 2000,
       top_p: 1,
       frequency_penalty: 0,
       presence_penalty: 0

@@ -1,13 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Pinecone } from '@pinecone-database/pinecone'
-import { put } from '@vercel/blob'
-import { processDocument, generateEmbedding } from '../../../lib/document-processing'
+import { generateEmbedding } from '../../../lib/document-processing'
 
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
+async function processFile(file: File): Promise<{ text: string; name: string }> {
+  const bytes = await file.arrayBuffer()
+  const buffer = Buffer.from(bytes)
+  
+  // Extract text based on file type
+  let text = ''
+  const fileName = file.name.toLowerCase()
+  
+  if (fileName.endsWith('.txt')) {
+    text = buffer.toString('utf-8')
+  } else if (fileName.endsWith('.pdf')) {
+    // Handle PDF extraction
+    text = buffer.toString('utf-8') // Replace with proper PDF extraction
+  } else if (fileName.endsWith('.docx')) {
+    // Handle DOCX extraction
+    text = buffer.toString('utf-8') // Replace with proper DOCX extraction
+  }
+
+  return { text, name: file.name }
+}
 
 export async function POST(request: NextRequest) {
   try {
-    // Validate environment variables first
+    // Validate environment variables
     if (!process.env.OPENAI_API_KEY) {
       throw new Error('OPENAI_API_KEY environment variable is not set');
     }
@@ -18,138 +39,80 @@ export async function POST(request: NextRequest) {
       throw new Error('PINECONE_INDEX environment variable is not set');
     }
 
-    console.log('Starting file upload process...', new Date().toISOString());
+    // Get form data with multiple files
     const formData = await request.formData()
-    const file = formData.get('file') as File | null
+    const files = formData.getAll('files') as File[]
 
-    if (!file) {
-      return NextResponse.json({ success: false, message: 'No file uploaded' }, { status: 400 })
+    if (!files.length) {
+      return NextResponse.json({ error: 'No files provided' }, { status: 400 })
     }
 
-    console.log('Uploading file to Vercel Blob:', file.name);
-    // Upload file to Vercel Blob
-    const blob = await put(file.name, file, {
-      access: 'public',
-    })
-    console.log('File uploaded to Vercel Blob:', blob.url);
+    console.log('Processing files:', files.map(f => f.name));
 
-    // Read file content
-    console.log('Reading file content...');
-    const fileContent = await file.text()
-    console.log('File content length:', fileContent.length);
-
-    // Process the document
-    console.log('Processing document...');
-    const processedContent = await processDocument(fileContent)
-    console.log('Document processed, length:', processedContent.length);
-
-    // Generate embedding
-    console.log('Generating embedding...');
-    const embedding = await generateEmbedding(processedContent)
-    console.log('Embedding generated, length:', embedding.length);
-
-    // Validate embedding dimensions
-    const expectedDimension = 1536; // Updated to match text-embedding-ada-002 dimensions
-    if (embedding.length !== expectedDimension) {
-      console.error(`Dimension mismatch: got ${embedding.length}, expected ${expectedDimension}`);
-      throw new Error(`Embedding dimension mismatch: expected ${expectedDimension}, got ${embedding.length}`)
-    }
-
-    // Determine file type
-    const fileType = file.type.startsWith('video/') ? 'video' :
-                     file.type.startsWith('audio/') ? 'audio' : 'document'
-    console.log('File type determined:', fileType);
-
-    // Initialize Pinecone client
-    console.log('Initializing Pinecone client...');
+    // Initialize Pinecone
     const pinecone = new Pinecone({
       apiKey: process.env.PINECONE_API_KEY!
-    })
-    console.log('Pinecone client initialized');
+    });
 
-    const index = pinecone.index(process.env.PINECONE_INDEX!)
-    console.log('Pinecone index accessed:', process.env.PINECONE_INDEX);
+    const index = pinecone.index(process.env.PINECONE_INDEX);
 
-    const id = `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    // Process each file
+    const results = await Promise.all(files.map(async (file) => {
+      try {
+        // Extract text from file
+        const { text, name } = await processFile(file)
+        
+        if (!text.trim()) {
+          throw new Error(`No content extracted from ${name}`)
+        }
 
-    const metadata = {
-      id,
-      fileName: file.name,
-      fileType,
-      fileUrl: blob.url,
-      uploadDate: new Date().toISOString(),
-      type: 'source',  // Ensure this key is always present
-      content: processedContent  // Store the processed content for AI access
+        // Generate embedding
+        const embedding = await generateEmbedding(text)
+
+        // Store in Pinecone
+        await index.upsert([{
+          id: `source_${Date.now()}_${name}`,
+          values: embedding,
+          metadata: {
+            fileName: name,
+            content: text,
+            type: 'source',
+            uploadedAt: new Date().toISOString()
+          }
+        }])
+
+        return { success: true, fileName: name }
+      } catch (error) {
+        console.error(`Error processing file ${file.name}:`, error)
+        return { 
+          success: false, 
+          fileName: file.name, 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        }
+      }
+    }))
+
+    // Count successes and failures
+    const successful = results.filter(r => r.success)
+    const failed = results.filter(r => !r.success)
+
+    // Prepare response message
+    let message = `${successful.length} file(s) uploaded successfully.`
+    if (failed.length > 0) {
+      message += ` ${failed.length} file(s) failed.`
     }
 
-    // Log metadata for debugging purposes
-    console.log('Preparing to store metadata:', {
-      id: metadata.id,
-      fileName: metadata.fileName,
-      fileType: metadata.fileType,
-      contentLength: metadata.content.length
-    });
-
-    console.log('Upserting to Pinecone with metadata:', {
-      id,
-      fileName: metadata.fileName,
-      fileType: metadata.fileType,
-      type: metadata.type,
-      contentLength: metadata.content.length
-    });
-
-    const upsertData = {
-      id,
-      values: embedding,
-      metadata
-    };
-
-    await index.upsert([upsertData]);
-    
-    // Verify the upsert by querying for the document
-    const verifyQuery = await index.query({
-      vector: embedding,
-      topK: 1,
-      includeMetadata: true,
-      filter: { type: { $eq: 'source' } }
-    });
-
-    console.log('Verification query results:', {
-      matchesFound: verifyQuery.matches.length,
-      firstMatch: verifyQuery.matches[0] ? {
-        score: verifyQuery.matches[0].score,
-        metadata: verifyQuery.matches[0].metadata
-      } : 'No matches'
-    });
-
-    console.log('Successfully upserted to Pinecone');
-
     return NextResponse.json({ 
-      success: true, 
-      message: 'File uploaded and processed successfully', 
-      fileUrl: blob.url 
+      message,
+      results,
+      successful: successful.length,
+      failed: failed.length
     })
   } catch (error) {
-    // Enhanced error logging
-    console.error('Detailed error in file upload:', {
-      error: error instanceof Error ? {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
-      } : error,
-      env: {
-        hasOpenAI: !!process.env.OPENAI_API_KEY,
-        hasPineconeKey: !!process.env.PINECONE_API_KEY,
-        hasPineconeIndex: !!process.env.PINECONE_INDEX,
-        pineconeIndex: process.env.PINECONE_INDEX
-      }
-    });
-
+    console.error('Error in file upload:', error)
     return NextResponse.json({ 
-      success: false, 
-      message: 'Error processing file', 
-      error: error instanceof Error ? error.message : 'Unknown error',
-      details: error instanceof Error ? error.stack : undefined
+      error: 'Failed to process files',
+      details: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
 }
