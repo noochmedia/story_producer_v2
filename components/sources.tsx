@@ -18,7 +18,7 @@ export function Sources() {
       // Create FormData with multiple files
       const formData = new FormData()
       files.forEach(file => {
-        formData.append('files', file as File)
+        formData.append('files', file)
       })
 
       const response = await fetch('/api/upload', {
@@ -53,13 +53,13 @@ export function Sources() {
       <h2 className="text-lg font-semibold">Upload Sources</h2>
       <div className="flex items-center gap-4">
         <Button
-          onClick={() => document.getElementById('sources-file-upload')?.click()}
+          onClick={() => document.getElementById('file-upload')?.click()}
           disabled={isUploading}
         >
           {isUploading ? 'Uploading...' : 'Select Files'}
         </Button>
         <input
-          id="sources-file-upload"
+          id="file-upload"
           type="file"
           multiple // Enable multiple file selection
           onChange={handleUpload}
