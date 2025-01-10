@@ -1,41 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { promises as fs } from 'fs'
-import path from 'path'
+import { Pinecone } from '@pinecone-database/pinecone'
+import { generateEmbedding } from '../../../lib/document-processing'
 
-// Use absolute path for data directory
-const DATA_DIR = path.join(process.cwd(), 'data')
-const PROJECT_DETAILS_FILE = path.join(DATA_DIR, 'project-details.json')
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
-// Ensure data directory exists
-async function ensureDataDir() {
+export async function GET(request: NextRequest) {
   try {
-    await fs.access(DATA_DIR)
-  } catch {
-    await fs.mkdir(DATA_DIR, { recursive: true })
-  }
-}
-
-// Fetch project details
-export async function GET() {
-  try {
-    console.log('Reading from:', PROJECT_DETAILS_FILE);
-    await ensureDataDir()
-
-    try {
-      const content = await fs.readFile(PROJECT_DETAILS_FILE, 'utf-8')
-      console.log('File content:', content);
-      const data = JSON.parse(content)
-      return NextResponse.json({ details: data.details })
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        // File doesn't exist yet, create it with empty details
-        await fs.writeFile(PROJECT_DETAILS_FILE, JSON.stringify({ details: '' }, null, 2))
-        return NextResponse.json({ details: '' })
-      }
-      throw error
+    // Validate environment variables
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY environment variable is not set');
     }
+    if (!process.env.PINECONE_API_KEY) {
+      throw new Error('PINECONE_API_KEY environment variable is not set');
+    }
+    if (!process.env.PINECONE_INDEX) {
+      throw new Error('PINECONE_INDEX environment variable is not set');
+    }
+
+    // Initialize Pinecone
+    const pinecone = new Pinecone({
+      apiKey: process.env.PINECONE_API_KEY!
+    });
+
+    const index = pinecone.index(process.env.PINECONE_INDEX);
+
+    // Query for project details
+    const queryEmbedding = await generateEmbedding("project details");
+    const queryResponse = await index.query({
+      vector: queryEmbedding,
+      topK: 1,
+      includeMetadata: true,
+      filter: { type: { $eq: 'project_details' } }
+    });
+
+    if (queryResponse.matches?.length > 0 && queryResponse.matches[0].metadata?.content) {
+      return NextResponse.json({ details: queryResponse.matches[0].metadata.content })
+    }
+
+    return NextResponse.json({ details: '' })
   } catch (error) {
-    console.error('Error in GET /api/project-details:', error)
+    console.error('Error fetching project details:', error)
     return NextResponse.json({ 
       error: 'Failed to fetch project details',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -43,37 +48,50 @@ export async function GET() {
   }
 }
 
-// Store project details
 export async function POST(request: NextRequest) {
   try {
-    const { details } = await request.json()
-
-    if (typeof details !== 'string') {
-      return NextResponse.json({ error: 'Invalid details format' }, { status: 400 })
+    // Validate environment variables
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY environment variable is not set');
+    }
+    if (!process.env.PINECONE_API_KEY) {
+      throw new Error('PINECONE_API_KEY environment variable is not set');
+    }
+    if (!process.env.PINECONE_INDEX) {
+      throw new Error('PINECONE_INDEX environment variable is not set');
     }
 
-    console.log('Writing to:', PROJECT_DETAILS_FILE);
-    console.log('Content:', { details });
+    const data = await request.json()
+    const { details } = data
 
-    await ensureDataDir()
-    
-    // Save to file
-    await fs.writeFile(PROJECT_DETAILS_FILE, JSON.stringify({ details }, null, 2))
+    if (!details) {
+      return NextResponse.json({ error: 'No details provided' }, { status: 400 })
+    }
 
-    // Verify the file was written
-    const content = await fs.readFile(PROJECT_DETAILS_FILE, 'utf-8')
-    console.log('Verified content:', content);
-
-    // Set cache headers to prevent stale data
-    const headers = new Headers({
-      'Cache-Control': 'no-store, must-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
+    // Initialize Pinecone
+    const pinecone = new Pinecone({
+      apiKey: process.env.PINECONE_API_KEY!
     });
 
-    return NextResponse.json({ success: true }, { headers })
+    const index = pinecone.index(process.env.PINECONE_INDEX);
+
+    // Generate embedding for the project details
+    const embedding = await generateEmbedding(details)
+
+    // Store in Pinecone
+    await index.upsert([{
+      id: 'project_details',
+      values: embedding,
+      metadata: {
+        content: details,
+        type: 'project_details',
+        updatedAt: new Date().toISOString()
+      }
+    }])
+
+    return NextResponse.json({ success: true })
   } catch (error) {
-    console.error('Error in POST /api/project-details:', error)
+    console.error('Error saving project details:', error)
     return NextResponse.json({ 
       error: 'Failed to save project details',
       details: error instanceof Error ? error.message : 'Unknown error'
