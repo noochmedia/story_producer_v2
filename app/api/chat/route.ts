@@ -208,114 +208,24 @@ export async function POST(req: Request) {
                     .map(source => source.metadata?.content || '')
                     .join('\n\n');
 
-                  // Choose appropriate model based on content size
-                  const estimatedTokens = OpenRouterClient.estimateTokens(allContent);
-                  console.log('Estimated tokens:', estimatedTokens);
-                  const useOpenRouter = estimatedTokens > 30000;
+                  // Import chunked processing
+                  const { processSourcesInChunks } = await import('../../../lib/chunked-processing');
 
-                  if (useOpenRouter) {
-                    console.log('Using OpenRouter due to content size:', estimatedTokens, 'tokens');
-                    const model = await OpenRouterClient.chooseModel(allContent, openrouter);
-                    console.log('Selected model:', model);
+                  // Process sources in chunks with appropriate model selection
+                  await processSourcesInChunks(
+                    relevantSources,
+                    userMessage.content,
+                    openai,
+                    openrouter,
+                    controller
+                  );
 
-                    if (isFollowUp && messages.length > 2) {
-                      // Process the user's choice
-                      const analysis = await processUserChoice(
-                        userMessage.content,
-                        relevantSources,
-                        messages[messages.length - 2].content,
-                        openai,
-                        controller
-                      );
-                      previousAnalyses.push(analysis);
-
-                      // If user requests final summary
-                      if (userMessage.content.toLowerCase().includes('summary') || 
-                          userMessage.content === '4') {
-                        await createFinalSummary(
-                          previousAnalyses,
-                          messages[0].content,
-                          openai,
-                          controller
-                        );
-                      }
-                    } else {
-                      // Start new analysis with OpenRouter
-                      console.log('Starting OpenRouter analysis with model:', model);
-                      const response = await openrouter.createChatCompletion({
-                        messages: [
-                          {
-                            role: 'system',
-                            content: `You are analyzing interview transcripts to answer questions about: ${userMessage.content}
-
-Your task is to:
-1. First provide a direct answer based on the available information
-2. Then identify key themes or aspects that could be explored further
-3. Support your answer with specific quotes
-4. Note any conflicting or complementary perspectives
-
-Format your response with:
-- Initial Answer (2-3 paragraphs)
-- Supporting Quotes (2-3 relevant quotes)
-- Key Themes (list of themes found)
-- Potential Areas for Deeper Analysis`
-                          },
-                          {
-                            role: 'user',
-                            content: allContent
-                          }
-                        ],
-                        model,
-                        stream: true
-                      });
-
-                      if (response) {
-                        for await (const chunk of OpenRouterClient.processStream(response)) {
-                          const formattedContent = chunk
-                            .replace(/\.\s+/g, '.\n\n')
-                            .replace(/:\s+/g, ':\n');
-                          controller.enqueue(new TextEncoder().encode(formattedContent));
-                        }
-                      }
-
-                      // Add prompt for further exploration
-                      controller.enqueue(new TextEncoder().encode('\n\nWould you like to explore any specific aspect in more detail? You can:\n\n'));
-                      controller.enqueue(new TextEncoder().encode('1. Get more details about a specific theme\n'));
-                      controller.enqueue(new TextEncoder().encode('2. See how different perspectives compare\n'));
-                      controller.enqueue(new TextEncoder().encode('3. Look at the timeline of events\n'));
-                      controller.enqueue(new TextEncoder().encode('4. Focus on specific examples or quotes\n\n'));
-                    }
-                  } else {
-                    // Use regular OpenAI for smaller content
-                    if (isFollowUp && messages.length > 2) {
-                      const analysis = await processUserChoice(
-                        userMessage.content,
-                        relevantSources,
-                        messages[messages.length - 2].content,
-                        openai,
-                        controller
-                      );
-                      previousAnalyses.push(analysis);
-
-                      if (userMessage.content.toLowerCase().includes('summary') || 
-                          userMessage.content === '4') {
-                        await createFinalSummary(
-                          previousAnalyses,
-                          messages[0].content,
-                          openai,
-                          controller
-                        );
-                      }
-                    } else {
-                      const analysis = await analyzeSourceCategories(
-                        relevantSources,
-                        userMessage.content,
-                        openai,
-                        controller
-                      );
-                      previousAnalyses.push(analysis);
-                    }
-                  }
+                  // Add prompt for further exploration
+                  controller.enqueue(new TextEncoder().encode('\n\nWould you like to explore any specific aspect in more detail? You can:\n\n'));
+                  controller.enqueue(new TextEncoder().encode('1. Get more details about a specific theme\n'));
+                  controller.enqueue(new TextEncoder().encode('2. See how different perspectives compare\n'));
+                  controller.enqueue(new TextEncoder().encode('3. Look at the timeline of events\n'));
+                  controller.enqueue(new TextEncoder().encode('4. Focus on specific examples or quotes\n\n'));
                 } else {
                   console.log('No relevant sources found');
                   systemMessage += `\nI've searched the interview transcripts but couldn't find any relevant information about that specific topic. Let me know if you'd like to know about something else from the interviews.`;

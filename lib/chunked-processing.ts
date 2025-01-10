@@ -1,5 +1,7 @@
 import { ScoredPineconeRecord } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
+import { AI_CONFIG } from './ai-config';
+import { OpenRouterClient } from './openrouter-client';
 
 interface SourceMetadata {
   fileName?: string;
@@ -17,6 +19,7 @@ export async function processSourcesInChunks(
   sources: PineconeMatch[],
   query: string,
   openai: OpenAI,
+  openrouter: OpenRouterClient,
   controller: ReadableStreamDefaultController
 ) {
   // Sort sources by relevance
@@ -55,12 +58,17 @@ export async function processSourcesInChunks(
       .map(source => `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || ''}`)
       .join('\n\n');
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o",
-      messages: [
-        {
-          role: 'system',
-          content: `You are analyzing a chunk of interview transcripts to find information about: ${query}
+    // Check if we need to use OpenRouter for this chunk
+    const useOpenRouter = OpenRouterClient.estimateTokens(chunkContent) > 30000;
+    
+    if (useOpenRouter) {
+      console.log(`Using OpenRouter for chunk ${i + 1} due to size`);
+      const model = await OpenRouterClient.chooseModel(chunkContent, openrouter);
+      const response = await openrouter.createChatCompletion({
+        messages: [
+          {
+            role: 'system',
+            content: `You are analyzing a chunk of interview transcripts to find information about: ${query}
 
 Your task is to:
 1. Extract relevant quotes and information
@@ -73,26 +81,66 @@ Format your response with:
 - Exact quotes with timestamps
 - Brief analysis after each quote
 - Connections between different sources`
-        },
-        {
-          role: 'user',
-          content: chunkContent
-        }
-      ],
-      temperature: 0.58,
-      max_tokens: 2000,
-      stream: true
-    });
+          },
+          {
+            role: 'user',
+            content: chunkContent
+          }
+        ],
+        model,
+        stream: true
+      });
 
-    // Stream the chunk analysis
-    for await (const chunk of response) {
-      const content = chunk.choices[0]?.delta?.content || '';
-      if (content) {
-        const formattedContent = content
-          .replace(/\.\s+/g, '.\n\n')
-          .replace(/:\s+/g, ':\n');
-        controller.enqueue(new TextEncoder().encode(formattedContent));
-        combinedAnalysis += formattedContent;
+      if (response) {
+        for await (const chunk of OpenRouterClient.processStream(response)) {
+          const formattedContent = chunk
+            .replace(/\.\s+/g, '.\n\n')
+            .replace(/:\s+/g, ':\n');
+          controller.enqueue(new TextEncoder().encode(formattedContent));
+          combinedAnalysis += formattedContent;
+        }
+      }
+    } else {
+      // Use OpenAI for smaller chunks
+      const response = await openai.chat.completions.create({
+        model: AI_CONFIG.model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are analyzing a chunk of interview transcripts to find information about: ${query}
+
+Your task is to:
+1. Extract relevant quotes and information
+2. Provide a brief analysis
+3. Focus on facts and direct quotes
+4. Include timestamps and sources
+
+Format your response with:
+- Clear section headings
+- Exact quotes with timestamps
+- Brief analysis after each quote
+- Connections between different sources`
+          },
+          {
+            role: 'user',
+            content: chunkContent
+          }
+        ],
+        temperature: 0.58,
+        max_tokens: 2000,
+        stream: true
+      });
+
+      // Stream the chunk analysis
+      for await (const chunk of response) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          const formattedContent = content
+            .replace(/\.\s+/g, '.\n\n')
+            .replace(/:\s+/g, ':\n');
+          controller.enqueue(new TextEncoder().encode(formattedContent));
+          combinedAnalysis += formattedContent;
+        }
       }
     }
 
@@ -103,11 +151,11 @@ Format your response with:
     }
   }
 
-  // Final summary
+  // Final summary using OpenAI (should be small enough)
   controller.enqueue(new TextEncoder().encode('\n\n[STAGE:Creating final summary]\n\n'));
   
   const finalResponse = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: AI_CONFIG.model,
     messages: [
       {
         role: 'system',
