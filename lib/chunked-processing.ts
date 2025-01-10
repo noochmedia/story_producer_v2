@@ -12,7 +12,7 @@ interface SourceMetadata {
 
 type PineconeMatch = ScoredPineconeRecord<SourceMetadata>;
 
-const CHUNK_SIZE = 10000; // Characters per chunk
+const CHUNK_SIZE = 8000; // Reduced chunk size for better handling
 const MAX_CHUNKS = 3; // Process 3 chunks at a time
 
 export async function processSourcesInChunks(
@@ -51,7 +51,7 @@ export async function processSourcesInChunks(
   let combinedAnalysis = '';
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
-    controller.enqueue(new TextEncoder().encode(`[STAGE:Analyzing sources (part ${i + 1} of ${chunks.length})]`));
+    controller.enqueue(new TextEncoder().encode(`[STAGE:Analyzing sources (part ${i + 1} of ${chunks.length})]\n\n`));
 
     // Create a summary prompt for this chunk
     const chunkContent = chunk
@@ -68,32 +68,24 @@ export async function processSourcesInChunks(
         messages: [
           {
             role: 'system',
-            content: `You are an analytical AI assistant helping to understand interview content about: ${query}
+            content: `You are analyzing interview content about: ${query}
 
 Your task is to:
-1. First understand and synthesize the information
-2. Form your own insights and analysis
-3. Support your analysis with relevant quotes
-4. Note any patterns or unique perspectives
-
-Think step by step:
-1. What are the key points being made?
-2. How do different perspectives relate?
-3. What's the overall narrative?
-4. What evidence supports these conclusions?
+1. Provide a brief overview
+2. List 2-3 key points
+3. Keep responses concise
 
 Format your response with clear spacing:
 
-Initial Analysis:
-• Brief overview (2-3 sentences)
-• Main takeaway
+Overview:
+[2-3 sentences maximum]
 
 Key Points:
-• Point 1
-• Point 2
-• Point 3
+• [Point 1]
+• [Point 2]
+• [Point 3]
 
-Would you like me to provide specific quotes and detailed analysis for any of these points?`
+Would you like me to provide specific quotes for any of these points?`
           },
           {
             role: 'user',
@@ -122,32 +114,24 @@ Would you like me to provide specific quotes and detailed analysis for any of th
         messages: [
           {
             role: 'system',
-            content: `You are an analytical AI assistant helping to understand interview content about: ${query}
+            content: `You are analyzing interview content about: ${query}
 
 Your task is to:
-1. First understand and synthesize the information
-2. Form your own insights and analysis
-3. Support your analysis with relevant quotes
-4. Note any patterns or unique perspectives
-
-Think step by step:
-1. What are the key points being made?
-2. How do different perspectives relate?
-3. What's the overall narrative?
-4. What evidence supports these conclusions?
+1. Provide a brief overview
+2. List 2-3 key points
+3. Keep responses concise
 
 Format your response with clear spacing:
 
-Initial Analysis:
-• Brief overview (2-3 sentences)
-• Main takeaway
+Overview:
+[2-3 sentences maximum]
 
 Key Points:
-• Point 1
-• Point 2
-• Point 3
+• [Point 1]
+• [Point 2]
+• [Point 3]
 
-Would you like me to provide specific quotes and detailed analysis for any of these points?`
+Would you like me to provide specific quotes for any of these points?`
           },
           {
             role: 'user',
@@ -155,7 +139,7 @@ Would you like me to provide specific quotes and detailed analysis for any of th
           }
         ],
         temperature: 0.58,
-        max_tokens: 2000,
+        max_tokens: 1000,
         stream: true
       });
 
@@ -189,32 +173,24 @@ Would you like me to provide specific quotes and detailed analysis for any of th
     messages: [
       {
         role: 'system',
-        content: `You are an analytical AI assistant creating a comprehensive understanding of: ${query}
+        content: `You are creating a concise summary about: ${query}
 
 Your task is to:
-1. First provide a clear, direct answer based on all the information
-2. Synthesize the various perspectives and insights
-3. Support your conclusions with evidence
-4. Identify broader implications and patterns
-
-Think step by step:
-1. What's the core answer to the query?
-2. What evidence supports this understanding?
-3. How do different perspectives contribute?
-4. What deeper insights emerge?
+1. Give a clear, brief answer
+2. List key insights
+3. Keep it focused
 
 Format your response with clear spacing:
 
 Summary:
-• Brief answer (1-2 sentences)
-• Key insight
+[1-2 sentences]
 
-Analysis:
-• Main point 1
-• Main point 2
-• Main point 3
+Key Points:
+• [Point 1]
+• [Point 2]
+• [Point 3]
 
-Would you like to explore any of these aspects in detail? I can provide specific quotes and deeper analysis for any point of interest.`
+Would you like me to provide specific quotes or explore any of these points in detail?`
       },
       {
         role: 'user',
@@ -222,7 +198,7 @@ Would you like to explore any of these aspects in detail? I can provide specific
       }
     ],
     temperature: 0.58,
-    max_tokens: 2000,
+    max_tokens: 1000,
     stream: true
   });
 
