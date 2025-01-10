@@ -68,19 +68,25 @@ export async function processSourcesInChunks(
         messages: [
           {
             role: 'system',
-            content: `You are analyzing a chunk of interview transcripts to find information about: ${query}
+            content: `You are an analytical AI assistant helping to understand interview content about: ${query}
 
 Your task is to:
-1. Extract relevant quotes and information
-2. Provide a brief analysis
-3. Focus on facts and direct quotes
-4. Include timestamps and sources
+1. First understand and synthesize the information
+2. Form your own insights and analysis
+3. Support your analysis with relevant quotes
+4. Note any patterns or unique perspectives
+
+Think step by step:
+1. What are the key points being made?
+2. How do different perspectives relate?
+3. What's the overall narrative?
+4. What evidence supports these conclusions?
 
 Format your response with:
-- Clear section headings
-- Exact quotes with timestamps
-- Brief analysis after each quote
-- Connections between different sources`
+- Initial Analysis (2-3 paragraphs synthesizing the information)
+- Key Insights (bullet points of main takeaways)
+- Supporting Evidence (relevant quotes with context)
+- Additional Observations (patterns, contradictions, etc.)`
           },
           {
             role: 'user',
@@ -107,19 +113,25 @@ Format your response with:
         messages: [
           {
             role: 'system',
-            content: `You are analyzing a chunk of interview transcripts to find information about: ${query}
+            content: `You are an analytical AI assistant helping to understand interview content about: ${query}
 
 Your task is to:
-1. Extract relevant quotes and information
-2. Provide a brief analysis
-3. Focus on facts and direct quotes
-4. Include timestamps and sources
+1. First understand and synthesize the information
+2. Form your own insights and analysis
+3. Support your analysis with relevant quotes
+4. Note any patterns or unique perspectives
+
+Think step by step:
+1. What are the key points being made?
+2. How do different perspectives relate?
+3. What's the overall narrative?
+4. What evidence supports these conclusions?
 
 Format your response with:
-- Clear section headings
-- Exact quotes with timestamps
-- Brief analysis after each quote
-- Connections between different sources`
+- Initial Analysis (2-3 paragraphs synthesizing the information)
+- Key Insights (bullet points of main takeaways)
+- Supporting Evidence (relevant quotes with context)
+- Additional Observations (patterns, contradictions, etc.)`
           },
           {
             role: 'user',
@@ -159,19 +171,25 @@ Format your response with:
     messages: [
       {
         role: 'system',
-        content: `You are creating a final summary based on the analyzed chunks of interview transcripts about: ${query}
+        content: `You are an analytical AI assistant creating a comprehensive understanding of: ${query}
 
 Your task is to:
-1. Synthesize the key points
-2. Highlight the most significant quotes
-3. Draw overall conclusions
-4. Note any patterns or themes
+1. First provide a clear, direct answer based on all the information
+2. Synthesize the various perspectives and insights
+3. Support your conclusions with evidence
+4. Identify broader implications and patterns
+
+Think step by step:
+1. What's the core answer to the query?
+2. What evidence supports this understanding?
+3. How do different perspectives contribute?
+4. What deeper insights emerge?
 
 Format your response with:
-- Clear introduction
-- Main findings
-- Supporting evidence
-- Conclusion`
+- Direct Answer (1-2 paragraphs clearly stating your conclusion)
+- Analysis (your synthesis of the information)
+- Evidence (key quotes that support your analysis)
+- Further Exploration (suggested areas for deeper investigation)`
       },
       {
         role: 'user',
