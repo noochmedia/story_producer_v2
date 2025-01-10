@@ -82,11 +82,18 @@ Think step by step:
 3. What's the overall narrative?
 4. What evidence supports these conclusions?
 
-Format your response with:
-- Initial Analysis (2-3 paragraphs synthesizing the information)
-- Key Insights (bullet points of main takeaways)
-- Supporting Evidence (relevant quotes with context)
-- Additional Observations (patterns, contradictions, etc.)`
+Format your response with clear spacing:
+
+Initial Analysis:
+• Brief overview (2-3 sentences)
+• Main takeaway
+
+Key Points:
+• Point 1
+• Point 2
+• Point 3
+
+Would you like me to provide specific quotes and detailed analysis for any of these points?`
           },
           {
             role: 'user',
@@ -101,7 +108,9 @@ Format your response with:
         for await (const chunk of OpenRouterClient.processStream(response)) {
           const formattedContent = chunk
             .replace(/\.\s+/g, '.\n\n')
-            .replace(/:\s+/g, ':\n');
+            .replace(/:\s+/g, ':\n')
+            .replace(/•\s+/g, '\n\n• ')
+            .replace(/\n{3,}/g, '\n\n');
           controller.enqueue(new TextEncoder().encode(formattedContent));
           combinedAnalysis += formattedContent;
         }
@@ -127,11 +136,18 @@ Think step by step:
 3. What's the overall narrative?
 4. What evidence supports these conclusions?
 
-Format your response with:
-- Initial Analysis (2-3 paragraphs synthesizing the information)
-- Key Insights (bullet points of main takeaways)
-- Supporting Evidence (relevant quotes with context)
-- Additional Observations (patterns, contradictions, etc.)`
+Format your response with clear spacing:
+
+Initial Analysis:
+• Brief overview (2-3 sentences)
+• Main takeaway
+
+Key Points:
+• Point 1
+• Point 2
+• Point 3
+
+Would you like me to provide specific quotes and detailed analysis for any of these points?`
           },
           {
             role: 'user',
@@ -149,7 +165,9 @@ Format your response with:
         if (content) {
           const formattedContent = content
             .replace(/\.\s+/g, '.\n\n')
-            .replace(/:\s+/g, ':\n');
+            .replace(/:\s+/g, ':\n')
+            .replace(/•\s+/g, '\n\n• ')
+            .replace(/\n{3,}/g, '\n\n');
           controller.enqueue(new TextEncoder().encode(formattedContent));
           combinedAnalysis += formattedContent;
         }
@@ -185,11 +203,18 @@ Think step by step:
 3. How do different perspectives contribute?
 4. What deeper insights emerge?
 
-Format your response with:
-- Direct Answer (1-2 paragraphs clearly stating your conclusion)
-- Analysis (your synthesis of the information)
-- Evidence (key quotes that support your analysis)
-- Further Exploration (suggested areas for deeper investigation)`
+Format your response with clear spacing:
+
+Summary:
+• Brief answer (1-2 sentences)
+• Key insight
+
+Analysis:
+• Main point 1
+• Main point 2
+• Main point 3
+
+Would you like to explore any of these aspects in detail? I can provide specific quotes and deeper analysis for any point of interest.`
       },
       {
         role: 'user',
@@ -207,7 +232,9 @@ Format your response with:
     if (content) {
       const formattedContent = content
         .replace(/\.\s+/g, '.\n\n')
-        .replace(/:\s+/g, ':\n');
+        .replace(/:\s+/g, ':\n')
+        .replace(/•\s+/g, '\n\n• ')
+        .replace(/\n{3,}/g, '\n\n');
       controller.enqueue(new TextEncoder().encode(formattedContent));
     }
   }
