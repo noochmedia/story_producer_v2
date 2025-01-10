@@ -61,10 +61,10 @@ export function Sources() {
         <input
           id="file-upload"
           type="file"
-          multiple // Enable multiple file selection
+          multiple
           onChange={handleUpload}
           className="hidden"
-          accept=".txt,.pdf,.docx" // Accept common text and document formats
+          accept=".txt,.pdf,.docx"
         />
       </div>
     </div>
