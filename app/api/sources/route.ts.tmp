@@ -1,0 +1,69 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { Pinecone } from '@pinecone-database/pinecone'
+import { generateEmbedding } from '@/lib/document-processing'
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+
+interface PineconeMatch {
+    id: string;
+    metadata?: {
+        fileName?: string;
+        fileType?: string;
+        fileUrl?: string;
+        content?: string;
+    };
+}
+
+export async function GET(request: NextRequest) {
+    try {
+        if (!process.env.PINECONE_API_KEY) {
+            throw new Error('PINECONE_API_KEY environment variable is not set');
+        }
+
+        if (!process.env.PINECONE_INDEX) {
+            throw new Error('PINECONE_INDEX environment variable is not set');
+        }
+
+        const pinecone = new Pinecone({
+            apiKey: process.env.PINECONE_API_KEY,
+        })
+
+        const index = pinecone.index(process.env.PINECONE_INDEX)
+
+        // Generate a neutral embedding for listing all sources
+        // This is a simplified approach - in a production environment,
+        // you might want to implement pagination or filtering
+        const queryEmbedding = await generateEmbedding("list all sources");
+
+        const queryResponse = await index.query({
+            vector: queryEmbedding,
+            topK: 10000, // High number to get all sources
+            includeMetadata: true,
+            filter: { type: { $eq: 'source' } }
+        })
+
+        if (queryResponse.matches?.length > 0) {
+            const sources = queryResponse.matches
+                .filter((match: PineconeMatch) => match.metadata?.fileName) // Validate metadata
+                .map((match: PineconeMatch) => ({
+                    id: match.id,
+                    name: match.metadata?.fileName as string,
+                    type: match.metadata?.fileType || 'unknown',
+                    url: match.metadata?.fileUrl || '',
+                    content: match.metadata?.content || 'No content available' // Include content
+                }))
+
+            return NextResponse.json({ sources })
+        } else {
+            console.error('No sources found in Pinecone.')
+            return NextResponse.json({ sources: [] })
+        }
+    } catch (error) {
+        console.error('Error fetching sources:', error)
+        return NextResponse.json({ 
+            error: 'Failed to fetch sources',
+            details: error instanceof Error ? error.message : 'Unknown error'
+        }, { status: 500 })
+    }
+}
