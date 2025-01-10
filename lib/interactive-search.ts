@@ -26,34 +26,31 @@ export async function analyzeSourceCategories(
 ) {
   controller.enqueue(new TextEncoder().encode('[STAGE:Analyzing available information]\n\n'));
 
-  // Combine all source content for initial analysis
-  const combinedContent = sources
-    .map(source => source.metadata?.content || '')
-    .join('\n\n');
-
-  // First, analyze what types of information are available
-  const categoryResponse = await openai.chat.completions.create({
+  // First do an initial analysis of the query
+  const initialResponse = await openai.chat.completions.create({
     model: AI_CONFIG.model,
     messages: [
       {
         role: 'system',
-        content: `You are analyzing interview transcripts to identify different categories of information available about: ${query}
+        content: `You are analyzing interview transcripts to answer questions about: ${query}
 
 Your task is to:
-1. Identify distinct types of information present
-2. Provide brief examples for each type
-3. Note how many sources mention each type
-4. Suggest specific aspects to explore
+1. First provide a direct answer based on the available information
+2. Then identify key themes or aspects that could be explored further
+3. Support your answer with specific quotes
+4. Note any conflicting or complementary perspectives
 
-Format your response as a structured list of categories, each with:
-- Category name
-- Brief description
-- Number of sources
-- Example quotes or mentions`
+Format your response with:
+- Initial Answer (2-3 paragraphs)
+- Supporting Quotes (2-3 relevant quotes)
+- Key Themes (list of themes found)
+- Potential Areas for Deeper Analysis`
       },
       {
         role: 'user',
-        content: combinedContent
+        content: sources
+          .map(source => `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || ''}`)
+          .join('\n\n')
       }
     ],
     temperature: 0.58,
@@ -61,28 +58,27 @@ Format your response as a structured list of categories, each with:
     stream: true
   });
 
-  // Stream the category analysis
-  let categoryAnalysis = '';
-  for await (const chunk of categoryResponse) {
+  // Stream the initial analysis
+  let initialAnalysis = '';
+  for await (const chunk of initialResponse) {
     const content = chunk.choices[0]?.delta?.content || '';
     if (content) {
       const formattedContent = content
         .replace(/\.\s+/g, '.\n\n')
         .replace(/:\s+/g, ':\n');
       controller.enqueue(new TextEncoder().encode(formattedContent));
-      categoryAnalysis += formattedContent;
+      initialAnalysis += formattedContent;
     }
   }
 
-  // Add prompt for user to choose a category
-  controller.enqueue(new TextEncoder().encode('\n\nWhich aspect would you like to explore in detail? You can:\n\n'));
-  controller.enqueue(new TextEncoder().encode('1. Choose a specific category to dive deeper\n'));
-  controller.enqueue(new TextEncoder().encode('2. Ask about relationships between categories\n'));
-  controller.enqueue(new TextEncoder().encode('3. Request a timeline of events\n'));
-  controller.enqueue(new TextEncoder().encode('4. Focus on specific quotes or examples\n\n'));
-  controller.enqueue(new TextEncoder().encode('Please let me know how you\'d like to proceed.\n'));
+  // Add prompt for further exploration
+  controller.enqueue(new TextEncoder().encode('\n\nWould you like to explore any specific aspect in more detail? You can:\n\n'));
+  controller.enqueue(new TextEncoder().encode('1. Get more details about a specific theme\n'));
+  controller.enqueue(new TextEncoder().encode('2. See how different perspectives compare\n'));
+  controller.enqueue(new TextEncoder().encode('3. Look at the timeline of events\n'));
+  controller.enqueue(new TextEncoder().encode('4. Focus on specific examples or quotes\n\n'));
 
-  return categoryAnalysis;
+  return initialAnalysis;
 }
 
 export async function processUserChoice(
