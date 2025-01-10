@@ -349,7 +349,15 @@ Format your response with:
               controller.close();
             } catch (error) {
               console.error('Error in streaming response:', error);
-              controller.enqueue(new TextEncoder().encode("I apologize, but I encountered an error while searching the sources. Please try your question again."));
+              const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+              console.error('Detailed error:', {
+                error: errorMessage,
+                stage: 'streaming',
+                deepDive,
+                hasProjectDetails: !!projectDetails,
+                messageCount: messages.length
+              });
+              controller.enqueue(new TextEncoder().encode(`I encountered an error while analyzing the sources: ${errorMessage}. This might be due to the size of the content or a temporary issue. You can try:\n\n1. Breaking your question into smaller parts\n2. Being more specific about what you want to know\n3. Asking about a different aspect of the sources`));
               controller.close();
             }
           },
@@ -382,9 +390,22 @@ Format your response with:
     return NextResponse.json(completion);
   } catch (error) {
     console.error('Error in chat processing:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Detailed error:', {
+      error: errorMessage,
+      stage: 'non-streaming',
+      deepDive,
+      hasProjectDetails: !!projectDetails,
+      messageCount: messages.length
+    });
     return NextResponse.json({ 
       error: 'Failed to process chat request',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: errorMessage,
+      suggestions: [
+        'Try breaking your question into smaller parts',
+        'Be more specific about what you want to know',
+        'Ask about a different aspect of the sources'
+      ]
     }, { status: 500 });
   }
 }
