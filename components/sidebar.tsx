@@ -17,7 +17,7 @@ export function Sidebar() {
     <aside className="w-80 border-r flex flex-col h-screen">
       <div className="p-4 border-b">
         <div className="text-2xl font-bold">STORY TOOLS</div>
-        <div className="text-sm text-muted-foreground">Producer v1</div>
+        <div className="text-sm text-muted-foreground">Producer v2</div>
       </div>
       <div className="flex-grow flex flex-col p-4 space-y-4 overflow-hidden">
         <Card className="flex-shrink-0">
