@@ -300,7 +300,7 @@ Format your response as a structured list of categories, each with:
                   systemMessage += `\nI've searched the interview transcripts but couldn't find any relevant information about that specific topic. Let me know if you'd like to know about something else from the interviews.`;
                   
                   const response = await openai.chat.completions.create({
-                    model: "gpt-4o",
+                    model: AI_CONFIG.model,
                     messages: [
                       { role: 'system', content: systemMessage },
                       ...messages.slice(-5)
@@ -325,7 +325,7 @@ Format your response as a structured list of categories, each with:
                 systemMessage += `\nNote that I'm not currently using the interview transcripts. If you'd like me to check the transcripts, please enable the "Use sources" option.`;
                 
                 const response = await openai.chat.completions.create({
-                  model: "gpt-4o",
+                    model: AI_CONFIG.model,
                   messages: [
                     { role: 'system', content: systemMessage },
                     ...messages.slice(-5)
@@ -367,7 +367,7 @@ Format your response as a structured list of categories, each with:
 
     // Non-streaming response handling
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: AI_CONFIG.model,
       messages: [
         { role: 'system', content: systemMessage },
         ...messages
