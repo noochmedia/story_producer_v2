@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
       throw new Error('PINECONE_INDEX environment variable is not set');
     }
 
-    // Get form data with multiple files
+    // Get form data
     const formData = await request.formData()
     console.log('FormData entries:', Array.from(formData.entries()).map(([key, value]) => ({
       key,
@@ -47,7 +47,11 @@ export async function POST(request: NextRequest) {
       fileName: value instanceof File ? value.name : null
     })));
 
-    const files = formData.getAll('files') as File[]
+    // Handle both single file and multiple files
+    const singleFile = formData.get('file')
+    const multipleFiles = formData.getAll('files')
+    const files = singleFile ? [singleFile] : multipleFiles as File[]
+
     console.log('Files array length:', files.length);
     console.log('Files details:', files.map(f => ({
       name: f.name,
@@ -58,8 +62,6 @@ export async function POST(request: NextRequest) {
     if (!files.length) {
       return NextResponse.json({ error: 'No files provided' }, { status: 400 })
     }
-
-    console.log('Processing files:', files.map(f => f.name));
 
     // Initialize Pinecone
     const pinecone = new Pinecone({
@@ -109,9 +111,9 @@ export async function POST(request: NextRequest) {
     const failed = results.filter(r => !r.success)
 
     // Prepare response message
-    let message = `${successful.length} file(s) uploaded successfully.`
+    let message = `${successful.length} file${successful.length === 1 ? '' : 's'} uploaded successfully.`
     if (failed.length > 0) {
-      message += ` ${failed.length} file(s) failed.`
+      message += ` ${failed.length} file${failed.length === 1 ? '' : 's'} failed.`
     }
 
     return NextResponse.json({ 
