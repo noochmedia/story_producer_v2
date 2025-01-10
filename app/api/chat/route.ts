@@ -109,6 +109,12 @@ async function queryPineconeForContext(query: string, stage: string, controller:
     });
   });
 
+  // Send a message if no matches found
+  if (validMatches.length === 0) {
+    controller.enqueue(new TextEncoder().encode("I couldn't find any relevant information in the sources about that topic. Would you like to try a different question?"));
+    return [];
+  }
+
   return validMatches;
 }
 
@@ -405,14 +411,19 @@ If you find relevant information in the sources, incorporate it into your respon
               for await (const chunk of stream) {
                 const content = chunk.choices[0]?.delta?.content || '';
                 if (content) {
-                  controller.enqueue(new TextEncoder().encode(content));
+                  // Add newlines after periods and colons for better formatting
+                  const formattedContent = content
+                    .replace(/\.\s+/g, '.\n\n')
+                    .replace(/:\s+/g, ':\n');
+                  controller.enqueue(new TextEncoder().encode(formattedContent));
                 }
               }
 
               controller.close();
             } catch (error) {
               console.error('Error in streaming response:', error);
-              controller.error(error);
+              controller.enqueue(new TextEncoder().encode("I apologize, but I encountered an error while searching the sources. Please try your question again."));
+              controller.close();
             }
           },
         }),
