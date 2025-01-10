@@ -1,5 +1,6 @@
 import { ScoredPineconeRecord } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
+import { AI_CONFIG } from './ai-config';
 
 interface SourceMetadata {
   fileName?: string;
@@ -32,7 +33,7 @@ export async function analyzeSourceCategories(
 
   // First, analyze what types of information are available
   const categoryResponse = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: AI_CONFIG.model,
     messages: [
       {
         role: 'system',
@@ -95,7 +96,7 @@ export async function processUserChoice(
 
   // Filter sources based on user's choice
   const response = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: AI_CONFIG.model,
     messages: [
       {
         role: 'system',
@@ -160,7 +161,7 @@ export async function createFinalSummary(
   controller.enqueue(new TextEncoder().encode('[STAGE:Creating final summary]\n\n'));
 
   const response = await openai.chat.completions.create({
-    model: "gpt-4o",
+    model: AI_CONFIG.model,
     messages: [
       {
         role: 'system',
