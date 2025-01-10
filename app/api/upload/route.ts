@@ -39,9 +39,13 @@ export async function POST(request: NextRequest) {
       throw new Error('PINECONE_INDEX environment variable is not set');
     }
 
-    // Get form data with multiple files
+    // Get form data
     const formData = await request.formData()
-    const files = formData.getAll('files') as File[]
+    
+    // Handle both single and multiple file uploads
+    const singleFile = formData.get('file')
+    const multipleFiles = formData.getAll('files')
+    const files = singleFile ? [singleFile] : multipleFiles as File[]
 
     if (!files.length) {
       return NextResponse.json({ error: 'No files provided' }, { status: 400 })
