@@ -100,8 +100,18 @@ async function queryPineconeForContext(query: string, stage: string, controller:
       });
       
       // Ensure the query matches Pinecone's expected format
+      // Create a pure array of numbers for the vector
+      const queryVector = new Float32Array(1536).fill(0);
+      
+      // Log the exact vector being sent
+      console.log('Query vector details:', {
+        type: 'Float32Array',
+        length: queryVector.length,
+        sample: Array.from(queryVector.slice(0, 3))
+      });
+
       queryResponse = await index.query({
-        vector: Array.from(zeroVector), // Convert to plain array
+        vector: Array.from(queryVector),
         topK: 100,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
@@ -145,8 +155,18 @@ async function queryPineconeForContext(query: string, stage: string, controller:
       });
 
       // Query Pinecone with validated vector
+      // Convert embedding to Float32Array for consistent numeric format
+      const queryVector = new Float32Array(vector);
+      
+      // Log the exact vector being sent
+      console.log('Query vector details:', {
+        type: 'Float32Array',
+        length: queryVector.length,
+        sample: Array.from(queryVector.slice(0, 3))
+      });
+
       queryResponse = await index.query({
-        vector: Array.from(vector), // Convert to plain array
+        vector: Array.from(queryVector),
         topK: 10,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }

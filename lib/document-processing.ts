@@ -134,35 +134,38 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
           input: chunk,
         });
 
-        // Extract and validate the embedding
+        // Extract the raw embedding
         const rawEmbedding = response.data[0].embedding;
 
-        // Convert to a plain array of numbers and validate
-        const embedding = Array.from(rawEmbedding).map(val => {
-          const num = Number(val);
+        // Convert to Float32Array for consistent numeric format
+        const float32Array = new Float32Array(rawEmbedding.length);
+        for (let i = 0; i < rawEmbedding.length; i++) {
+          const num = Number(rawEmbedding[i]);
           if (isNaN(num)) {
             throw new Error('Invalid vector value detected');
           }
-          return num;
-        });
-
-        // Additional validation
-        if (!Array.isArray(embedding) || embedding.length !== 1536) {
-          throw new Error(`Invalid embedding array length: ${embedding.length}`);
+          float32Array[i] = num;
         }
+
+        // Validate dimensions
+        if (float32Array.length !== 1536) {
+          throw new Error(`Invalid embedding array length: ${float32Array.length}`);
+        }
+
+        // Convert back to plain array for storage
+        const embedding = Array.from(float32Array);
 
         // Log validation success
         console.log(`Validated embedding for chunk ${index + 1}:`, {
           dimension: embedding.length,
           sample: embedding.slice(0, 3),
-          isArray: Array.isArray(embedding),
-          allNumbers: embedding.every(v => typeof v === 'number' && !isNaN(v))
+          type: 'Float32Array converted to plain array',
+          sampleJson: JSON.stringify(embedding.slice(0, 3))
         });
         
-        // Return as a plain object with primitive values
         return {
           chunk,
-          embedding: [...embedding] // Create a new array to ensure it's a plain array
+          embedding
         };
       } catch (error) {
         console.error(`Error generating embedding for chunk ${index + 1}:`, error);

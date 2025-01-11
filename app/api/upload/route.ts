@@ -145,44 +145,34 @@ export async function POST(request: NextRequest) {
 
         const timestamp = Date.now();
         const chunks = embeddingResults.map((result, i) => {
-          // Convert embedding to a plain array of numbers
-          const embedding = result.embedding;
-          const vector = Array.from(embedding).map(val => {
-            const num = Number(val);
-            if (isNaN(num)) {
-              throw new Error(`Invalid vector value in chunk ${i}`);
-            }
-            return num;
-          });
-
-          // Validate vector
-          if (!Array.isArray(vector) || vector.length !== 1536) {
+          // Convert embedding to Float32Array for consistent numeric format
+          const float32Array = new Float32Array(result.embedding);
+          
+          // Validate dimensions
+          if (float32Array.length !== 1536) {
             console.error('Invalid vector structure:', {
               index: i,
-              type: typeof vector,
-              isArray: Array.isArray(vector),
-              length: vector.length,
-              sample: vector.slice(0, 3)
+              type: 'Float32Array',
+              length: float32Array.length,
+              sample: Array.from(float32Array.slice(0, 3))
             });
-            throw new Error(`Invalid vector dimensions: expected 1536, got ${vector.length}`);
+            throw new Error(`Invalid vector dimensions: expected 1536, got ${float32Array.length}`);
           }
 
-          // Create a plain array copy to ensure no object references
-          const plainVector = [...vector];
+          // Convert to plain array for storage
+          const values = Array.from(float32Array);
 
           // Log the vector we're about to store
           console.log(`Vector for chunk ${i}:`, {
-            type: typeof plainVector,
-            isArray: Array.isArray(plainVector),
-            length: plainVector.length,
-            sample: plainVector.slice(0, 3),
-            allNumbers: plainVector.every(v => typeof v === 'number' && !isNaN(v)),
-            stringified: JSON.stringify(plainVector.slice(0, 3))
+            type: 'Float32Array converted to plain array',
+            length: values.length,
+            sample: values.slice(0, 3),
+            sampleJson: JSON.stringify(values.slice(0, 3))
           });
 
           return {
             id: `source_${timestamp}_${name}_chunk${i}`,
-            values: plainVector,
+            values,
             metadata: {
               fileName: name,
               content: result.chunk,
