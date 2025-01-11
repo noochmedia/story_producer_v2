@@ -90,8 +90,8 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   try {
     if (isOverviewQuery) {
       console.log('Using metadata-only query for overview');
-      // Create a zero vector
-      const vector = new Array(1536).fill(0);
+      // Create a zero vector with correct dimensions for multilingual-e5-large
+      const vector = new Array(1024).fill(0);
 
       // Log vector details
       console.log('Vector details:', {
