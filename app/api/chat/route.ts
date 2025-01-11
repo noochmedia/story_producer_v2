@@ -201,13 +201,15 @@ export async function POST(req: Request) {
         new ReadableStream({
           async start(controller) {
             try {
-              // Start with base system message including project details
+              // Always include project details in system message
               systemMessage = getBaseSystemMessage(projectDetails);
 
               // Log the mode we're running in
-              console.log('Running in mode:', deepDive ? 'Deep Dive' : 'Normal');
+              console.log('Running in mode:', deepDive ? 'Deep Dive' : 'Normal', 'with project details');
 
               if (deepDive) {
+                // Add source-specific context
+                systemMessage += `\nYou have access to interview transcripts and can search through them for relevant information.`;
                 console.log('Entering deep dive mode with sources');
                 // Only check memory and query sources in deep dive mode
                 const relevantMemories = await queryMemory(userMessage.content);
@@ -297,7 +299,7 @@ export async function POST(req: Request) {
               } else {
                 console.log('Running in normal mode without sources');
                 // In normal mode, just respond without querying sources
-                systemMessage += `\nNote that I'm not currently using the interview transcripts. If you'd like me to check the transcripts, please enable the "Use sources" option by checking the box below the input field.`;
+                systemMessage += `\nNote: I can use the interview transcripts if you enable the "Use sources" option below.`;
                 
                 const response = await openai.chat.completions.create({
                   model: AI_CONFIG.model,

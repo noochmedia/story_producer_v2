@@ -103,31 +103,18 @@ export function AIChat() {
     }
   ]
 
-  // Helper to determine if a query should use sources
-  const shouldUseSources = (query: string): boolean => {
-    const sourcesKeywords = [
-      'interview', 'interviews', 'transcript', 'transcripts',
-      'say', 'said', 'mention', 'mentioned',
-      'talk', 'talked', 'discuss', 'discussed',
-      'summary', 'summarize', 'overview',
-      'who', 'what', 'when', 'where', 'why', 'how'
-    ];
-    
-    const queryLower = query.toLowerCase();
-    return sourcesKeywords.some(keyword => queryLower.includes(keyword));
-  }
+  // Create a ref for the input element
+  const inputRef = React.useRef<HTMLInputElement>(null);
+
+  // Auto-focus input after response
+  useEffect(() => {
+    if (!isLoading && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [isLoading]);
 
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return
-
-    // Check if we should enable sources based on the query
-    const shouldEnableSources = shouldUseSources(input);
-    if (shouldEnableSources && !useSources) {
-      console.log('Auto-enabling sources for query:', input);
-      setUseSources(true);
-      // Wait for state update before proceeding
-      await new Promise(resolve => setTimeout(resolve, 0));
-    }
 
     const userMessage: Message = { role: 'user', content: input }
     setMessages(prev => [...prev, userMessage])
@@ -279,14 +266,7 @@ export function AIChat() {
   }
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
-    const newValue = e.target.value;
-    setInput(newValue);
-    
-    // Auto-enable sources for certain types of queries
-    if (shouldUseSources(newValue) && !useSources) {
-      console.log('Auto-enabling sources for input:', newValue);
-      setUseSources(true);
-    }
+    setInput(e.target.value);
   }
 
   return (
@@ -329,6 +309,7 @@ export function AIChat() {
         {/* Input Area */}
         <div className="flex gap-2 items-center">
           <Input
+            ref={inputRef}
             value={input}
             onChange={handleInputChange}
             placeholder="Start chatting, ask a question, or choose an option above"
