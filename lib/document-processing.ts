@@ -25,7 +25,10 @@ async function generatePineconeEmbeddings(inputs: string[]): Promise<number[][]>
     throw new Error('PINECONE_HOST environment variable is not set');
   }
 
-  const response = await fetch(`${process.env.PINECONE_HOST}/vectors/embed`, {
+  // Extract the base URL without the protocol
+  const baseUrl = process.env.PINECONE_HOST.replace(/^https?:\/\//, '');
+  
+  const response = await fetch(`https://${baseUrl}/vectors/embed`, {
     method: 'POST',
     headers: {
       'Api-Key': process.env.PINECONE_API_KEY!,
@@ -42,7 +45,13 @@ async function generatePineconeEmbeddings(inputs: string[]): Promise<number[][]>
   });
 
   if (!response.ok) {
-    throw new Error(`Pinecone embedding API error: ${response.statusText}`);
+    const errorText = await response.text();
+    console.error('Pinecone API Error:', {
+      status: response.status,
+      statusText: response.statusText,
+      error: errorText
+    });
+    throw new Error(`Pinecone embedding API error: ${response.statusText} - ${errorText}`);
   }
 
   const data = await response.json();
