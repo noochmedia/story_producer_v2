@@ -107,9 +107,10 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         return [];
       }
 
-      // Use embedding directly without modification
+      // Use the embedding directly since it's already validated in generateEmbedding
       const queryEmbedding = embeddingResults[0].embedding;
       console.log('Querying Pinecone with vector length:', queryEmbedding.length);
+      console.log('First few values:', queryEmbedding.slice(0, 3));
       
       queryResponse = await index.query({
         vector: queryEmbedding,
