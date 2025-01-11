@@ -114,30 +114,40 @@ export async function POST(request: NextRequest) {
           throw new Error(`No content extracted from ${name}`)
         }
 
-        // Generate embedding
-        const embedding = await generateEmbedding(text)
+        // Generate embeddings for chunks
+        const embeddingResults = await generateEmbedding(text)
+        console.log(`Generated embeddings for ${embeddingResults.length} chunks`)
 
-        // Store in Pinecone with Blob URL if available
-        const metadata: any = {
-          fileName: name,
-          content: text,
-          type: 'source',
-          uploadedAt: new Date().toISOString()
-        }
-        
-        // Add Blob URL to metadata if available
-        if (blob) {
-          metadata.fileUrl = blob.url
-          console.log(`[Pinecone] Including Blob URL in metadata: ${blob.url}`)
-        } else {
-          console.log(`[Pinecone] No Blob URL available for ${name}`)
-        }
+        // Store each chunk in Pinecone
+        const timestamp = Date.now()
+        for (let i = 0; i < embeddingResults.length; i++) {
+          const result = embeddingResults[i];
+          const metadata: any = {
+            fileName: name,
+            content: result.chunk,
+            type: 'source',
+            uploadedAt: new Date().toISOString(),
+            chunkIndex: i,
+            totalChunks: embeddingResults.length
+          }
+          
+          // Add Blob URL to metadata if available
+          if (blob) {
+            metadata.fileUrl = blob.url
+            console.log(`[Pinecone] Including Blob URL in metadata for chunk ${i + 1}/${embeddingResults.length}`)
+          } else {
+            console.log(`[Pinecone] No Blob URL available for chunk ${i + 1}/${embeddingResults.length}`)
+          }
 
-        await index.upsert([{
-          id: `source_${Date.now()}_${name}`,
-          values: embedding,
-          metadata
-        }])
+          // Store chunk in Pinecone
+          await index.upsert([{
+            id: `source_${timestamp}_${name}_chunk${i}`,
+            values: result.embedding,
+            metadata
+          }]);
+          
+          console.log(`[Pinecone] Stored chunk ${i + 1}/${embeddingResults.length}`);
+        }
 
         return { success: true, fileName: name }
       } catch (error) {
