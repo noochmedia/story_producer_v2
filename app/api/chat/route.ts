@@ -87,38 +87,50 @@ async function queryPineconeForContext(query: string, stage: string, controller:
                          query.toLowerCase().includes('everything');
 
   let queryResponse;
-  if (isOverviewQuery) {
-    console.log('Using metadata-only query for overview');
-    // For overview queries, just get all sources without vector search
-    queryResponse = await index.query({
-      vector: Array(1536).fill(0), // Neutral vector
-      topK: 100,
-      includeMetadata: true,
-      filter: { type: { $eq: 'source' } }
-    });
-  } else {
-    console.log('Generating embedding for specific query:', query);
-    const embeddingResults = await generateEmbedding(query);
-    
-    if (!embeddingResults || embeddingResults.length === 0) {
-      console.log('No valid embeddings generated for query');
-      controller.enqueue(new TextEncoder().encode("I couldn't process your query effectively. Could you try rephrasing it or being more specific?"));
-      return [];
-    }
+  try {
+    if (isOverviewQuery) {
+      console.log('Using metadata-only query for overview');
+      // For overview queries, just get all sources without vector search
+      const neutralVector = Array.from({ length: 1536 }, () => 0);
+      queryResponse = await index.query({
+        vector: neutralVector,
+        topK: 100,
+        includeMetadata: true,
+        filter: { type: { $eq: 'source' } }
+      });
+    } else {
+      console.log('Generating embedding for specific query:', query);
+      const embeddingResults = await generateEmbedding(query);
+      
+      if (!embeddingResults || embeddingResults.length === 0) {
+        console.log('No valid embeddings generated for query');
+        controller.enqueue(new TextEncoder().encode("I couldn't process your query effectively. Could you try rephrasing it or being more specific?"));
+        return [];
+      }
 
-    const queryEmbedding = embeddingResults[0].embedding;
-    if (!queryEmbedding || !Array.isArray(queryEmbedding) || queryEmbedding.length !== 1536) {
-      console.error('Invalid embedding generated:', queryEmbedding);
-      throw new Error('Invalid embedding generated for query');
-    }
+      const queryEmbedding = embeddingResults[0].embedding;
+      if (!queryEmbedding || !Array.isArray(queryEmbedding) || queryEmbedding.length !== 1536) {
+        console.error('Invalid embedding generated:', queryEmbedding);
+        throw new Error('Invalid embedding generated for query');
+      }
 
-    console.log('Querying Pinecone with specific vector');
-    queryResponse = await index.query({
-      vector: queryEmbedding,
-      topK: 10,
-      includeMetadata: true,
-      filter: { type: { $eq: 'source' } }
-    });
+      // Ensure vector values are numbers and not objects
+      const validVector = queryEmbedding.map(val => Number(val));
+      if (!validVector.every(val => typeof val === 'number' && !isNaN(val))) {
+        throw new Error('Invalid vector values');
+      }
+
+      console.log('Querying Pinecone with specific vector');
+      queryResponse = await index.query({
+        vector: validVector,
+        topK: 10,
+        includeMetadata: true,
+        filter: { type: { $eq: 'source' } }
+      });
+    }
+  } catch (error) {
+    console.error('Error in vector search:', error);
+    throw error;
   }
 
   console.log('Found matches:', queryResponse.matches.length);
