@@ -147,31 +147,32 @@ export async function POST(request: NextRequest) {
 
         // Store each chunk in Pinecone with both content and Blob metadata
         const timestamp = Date.now();
-        const chunks = embeddingResults.map((result, i) => ({
-          id: `source_${timestamp}_${name}_chunk${i}`,
-          values: result.embedding,
-          metadata: {
-            fileName: name,
-            // Store the actual content directly in metadata
-            content: result.chunk,
-            // Store processed content for consistency
-            processedContent: result.chunk,
-            type: 'source',
-            uploadedAt: new Date().toISOString(),
-            chunkIndex: i,
-            totalChunks: embeddingResults.length,
-            chunkLength: result.chunk.length,
-            // Always include Blob metadata when available
-            ...(blob && {
-              fileUrl: blob.url,
-              filePath: blob.pathname,
-              fileType: file.type || undefined,
-              hasBlob: true // Flag to indicate Blob storage is being used
-            }),
-            // Add storage version for future compatibility
-            storageVersion: 'dual_storage_v1'
-          }
-        }));
+        const chunks = embeddingResults.map((result, i) => {
+          // Ensure embedding is a plain array of numbers
+          const plainVector = [...Array.from(result.embedding, val => Number(val))];
+          
+          return {
+            id: `source_${timestamp}_${name}_chunk${i}`,
+            values: plainVector,
+            metadata: {
+              fileName: name,
+              content: result.chunk,
+              processedContent: result.chunk,
+              type: 'source',
+              uploadedAt: new Date().toISOString(),
+              chunkIndex: i,
+              totalChunks: embeddingResults.length,
+              chunkLength: result.chunk.length,
+              ...(blob && {
+                fileUrl: blob.url,
+                filePath: blob.pathname,
+                fileType: file.type || undefined,
+                hasBlob: true
+              }),
+              storageVersion: 'dual_storage_v1'
+            }
+          };
+        });
 
         // Batch upsert chunks for better performance
         const BATCH_SIZE = 100;
@@ -181,25 +182,25 @@ export async function POST(request: NextRequest) {
           console.log(`[Pinecone] Stored chunks ${i + 1} to ${Math.min(i + BATCH_SIZE, chunks.length)}/${chunks.length}`);
         }
 
-        return { success: true, fileName: name }
+        return { success: true, fileName: name };
       } catch (error) {
-        console.error(`Error processing file ${file.name}:`, error)
+        console.error(`Error processing file ${file.name}:`, error);
         return { 
           success: false, 
           fileName: file.name, 
           error: error instanceof Error ? error.message : 'Unknown error' 
-        }
+        };
       }
-    }))
+    }));
 
     // Count successes and failures
-    const successful = results.filter(r => r.success)
-    const failed = results.filter(r => !r.success)
+    const successful = results.filter(r => r.success);
+    const failed = results.filter(r => !r.success);
 
     // Prepare response message
-    let message = `${successful.length} file${successful.length === 1 ? '' : 's'} uploaded successfully.`
+    let message = `${successful.length} file${successful.length === 1 ? '' : 's'} uploaded successfully.`;
     if (failed.length > 0) {
-      message += ` ${failed.length} file${failed.length === 1 ? '' : 's'} failed.`
+      message += ` ${failed.length} file${failed.length === 1 ? '' : 's'} failed.`;
     }
 
     return NextResponse.json({ 
@@ -207,12 +208,12 @@ export async function POST(request: NextRequest) {
       results,
       successful: successful.length,
       failed: failed.length
-    })
+    });
   } catch (error) {
-    console.error('Error in file upload:', error)
+    console.error('Error in file upload:', error);
     return NextResponse.json({ 
       error: 'Failed to process files',
       details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 })
+    }, { status: 500 });
   }
 }
