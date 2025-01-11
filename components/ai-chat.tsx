@@ -43,6 +43,11 @@ export function AIChat() {
     localStorage.setItem('chatHistory', JSON.stringify(messages))
   }, [messages])
 
+  // Log when sources mode changes
+  useEffect(() => {
+    console.log('Sources mode changed:', { useSources });
+  }, [useSources]);
+
   const quickActions: QuickAction[] = [
     {
       label: "Character Brief",
@@ -98,8 +103,31 @@ export function AIChat() {
     }
   ]
 
+  // Helper to determine if a query should use sources
+  const shouldUseSources = (query: string): boolean => {
+    const sourcesKeywords = [
+      'interview', 'interviews', 'transcript', 'transcripts',
+      'say', 'said', 'mention', 'mentioned',
+      'talk', 'talked', 'discuss', 'discussed',
+      'summary', 'summarize', 'overview',
+      'who', 'what', 'when', 'where', 'why', 'how'
+    ];
+    
+    const queryLower = query.toLowerCase();
+    return sourcesKeywords.some(keyword => queryLower.includes(keyword));
+  }
+
   const sendMessage = async () => {
     if (!input.trim() || isLoading) return
+
+    // Check if we should enable sources based on the query
+    const shouldEnableSources = shouldUseSources(input);
+    if (shouldEnableSources && !useSources) {
+      console.log('Auto-enabling sources for query:', input);
+      setUseSources(true);
+      // Wait for state update before proceeding
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
 
     const userMessage: Message = { role: 'user', content: input }
     setMessages(prev => [...prev, userMessage])
@@ -118,20 +146,37 @@ export function AIChat() {
       const isSoundbiteRequest = input.startsWith("What theme, idea, or statement type would you like?") ||
                                 input.startsWith("What is the ideal soundbite you'd like me to create");
 
+      // Log the request details
+      const requestBody = {
+        messages: [...messages, userMessage],
+        projectDetails,
+        deepDive: useSources,
+        isSoundbiteRequest,
+        stream: true
+      };
+
+      console.log('Sending chat request:', {
+        messageCount: messages.length + 1,
+        useSources,
+        deepDive: requestBody.deepDive,
+        isSoundbiteRequest,
+        query: userMessage.content,
+        mode: useSources ? 'Deep Dive' : 'Normal'
+      });
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [...messages, userMessage],
-          projectDetails,
-          deepDive: useSources,
-          isSoundbiteRequest,
-          stream: true
-        })
-      })
+        body: JSON.stringify(requestBody)
+      });
+
+      // Log the response status
+      console.log('Chat response status:', response.status);
 
       if (!response.ok) {
-        throw new Error('Failed to get AI response')
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Chat response error:', errorData);
+        throw new Error(errorData.details || 'Failed to get AI response');
       }
 
       const reader = response.body?.getReader()
@@ -234,7 +279,14 @@ export function AIChat() {
   }
 
   const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
-    setInput(e.target.value)
+    const newValue = e.target.value;
+    setInput(newValue);
+    
+    // Auto-enable sources for certain types of queries
+    if (shouldUseSources(newValue) && !useSources) {
+      console.log('Auto-enabling sources for input:', newValue);
+      setUseSources(true);
+    }
   }
 
   return (
@@ -289,7 +341,14 @@ export function AIChat() {
               <Checkbox
                 id="useSources"
                 checked={useSources}
-                onCheckedChange={(checked) => setUseSources(checked as boolean)}
+                onCheckedChange={(checked) => {
+                  const newValue = checked as boolean;
+                  console.log('Sources checkbox changed:', { 
+                    oldValue: useSources, 
+                    newValue 
+                  });
+                  setUseSources(newValue);
+                }}
                 disabled={isLoading}
               />
               <label
