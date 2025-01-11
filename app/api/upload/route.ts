@@ -145,22 +145,40 @@ export async function POST(request: NextRequest) {
 
         const timestamp = Date.now();
         const chunks = embeddingResults.map((result, i) => {
-          // Validate embedding structure
-          if (!Array.isArray(result.embedding) || 
-              result.embedding.length !== 1536) {
-            console.error('Invalid embedding structure:', {
+          // Convert embedding to a plain array of numbers
+          const vector = Array.from(result.embedding).map(val => {
+            const num = Number(val);
+            if (isNaN(num)) {
+              throw new Error(`Invalid vector value in chunk ${i}`);
+            }
+            return num;
+          });
+
+          // Validate vector
+          if (!Array.isArray(vector) || vector.length !== 1536) {
+            console.error('Invalid vector structure:', {
               index: i,
-              type: typeof result.embedding,
-              isArray: Array.isArray(result.embedding),
-              length: result.embedding?.length,
-              sample: Array.isArray(result.embedding) ? result.embedding.slice(0, 3) : null
+              type: typeof vector,
+              isArray: Array.isArray(vector),
+              length: vector.length,
+              sample: vector.slice(0, 3)
             });
-            throw new Error(`Invalid embedding structure for chunk ${i}`);
+            throw new Error(`Invalid vector dimensions: expected 1536, got ${vector.length}`);
           }
+
+          // Log the vector we're about to store
+          console.log(`Vector for chunk ${i}:`, {
+            type: typeof vector,
+            isArray: Array.isArray(vector),
+            length: vector.length,
+            sample: vector.slice(0, 3),
+            allNumbers: vector.every(v => typeof v === 'number' && !isNaN(v)),
+            stringified: JSON.stringify(vector.slice(0, 3))
+          });
 
           return {
             id: `source_${timestamp}_${name}_chunk${i}`,
-            values: result.embedding,
+            values: vector,
             metadata: {
               fileName: name,
               content: result.chunk,
@@ -196,7 +214,7 @@ export async function POST(request: NextRequest) {
                 type: typeof chunk.values,
                 isArray: Array.isArray(chunk.values),
                 length: chunk.values?.length,
-                sample: Array.isArray(chunk.values) ? chunk.values.slice(0, 3) : null
+                sample: chunk.values.slice(0, 3)
               });
               throw new Error(`Invalid vector in batch at index ${idx}`);
             }
