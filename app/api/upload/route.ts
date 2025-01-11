@@ -163,8 +163,8 @@ export async function POST(request: NextRequest) {
             return num;
           });
 
-          // Validate dimensions
-          if (values.length !== 1536) {
+          // Validate dimensions for multilingual-e5-large
+          if (values.length !== 1024) {
             console.error('Invalid vector structure:', {
               index: i,
               type: typeof values,
@@ -172,7 +172,7 @@ export async function POST(request: NextRequest) {
               length: values.length,
               sample: values.slice(0, 3)
             });
-            throw new Error(`Invalid vector dimensions: expected 1536, got ${values.length}`);
+            throw new Error(`Invalid vector dimensions: expected 1024, got ${values.length}`);
           }
 
           // Log the vector details before storage
@@ -184,30 +184,6 @@ export async function POST(request: NextRequest) {
             allNumbers: values.every(v => typeof v === 'number' && !isNaN(v)),
             sampleJson: JSON.stringify(values.slice(0, 3))
           });
-
-          // Log the exact upsert payload structure
-          const chunkPayload = {
-            id: `source_${timestamp}_${name}_chunk${i}`,
-            values,
-            metadata: {
-              fileName: name,
-              content: result.chunk,
-              processedContent: result.chunk,
-              type: 'source',
-              uploadedAt: new Date().toISOString(),
-              chunkIndex: i,
-              totalChunks: embeddingResults.length,
-              chunkLength: result.chunk.length,
-              ...(blob && {
-                fileUrl: blob.url,
-                filePath: blob.pathname,
-                fileType: file.type || undefined,
-                hasBlob: true
-              }),
-              storageVersion: 'dual_storage_v1'
-            }
-          };
-          console.log(`Upsert payload for chunk ${i}:`, JSON.stringify(chunkPayload, null, 2));
 
           return {
             id: `source_${timestamp}_${name}_chunk${i}`,
@@ -240,7 +216,7 @@ export async function POST(request: NextRequest) {
           // Validate each vector in the batch
           batch.forEach((chunk, idx) => {
             if (!Array.isArray(chunk.values) || 
-                chunk.values.length !== 1536 ||
+                chunk.values.length !== 1024 ||
                 !chunk.values.every(v => typeof v === 'number' && !isNaN(v))) {
               console.error('Invalid vector structure:', {
                 index: idx,
