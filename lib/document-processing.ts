@@ -137,14 +137,47 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
           input: chunk,
         });
 
+        // Log raw response to debug
+        console.log('OpenAI embedding response:', {
+          hasData: !!response.data,
+          dataLength: response.data?.length,
+          firstItem: response.data?.[0] ? {
+            hasEmbedding: !!response.data[0].embedding,
+            embeddingType: typeof response.data[0].embedding,
+            isArray: Array.isArray(response.data[0].embedding),
+            constructor: response.data[0].embedding?.constructor?.name,
+            sample: Array.isArray(response.data[0].embedding) 
+              ? response.data[0].embedding.slice(0, 3) 
+              : 'not an array'
+          } : 'no first item'
+        });
+
         if (!response.data?.[0]?.embedding) {
           throw new Error(`Failed to generate embedding for chunk ${index + 1}`);
         }
 
         // Get the full embedding array and ensure it's properly formatted
         const rawEmbedding = response.data[0].embedding;
+        
+        // Log raw embedding before conversion
+        console.log('Raw embedding before conversion:', {
+          type: typeof rawEmbedding,
+          isArray: Array.isArray(rawEmbedding),
+          constructor: rawEmbedding?.constructor?.name,
+          sample: Array.isArray(rawEmbedding) 
+            ? rawEmbedding.slice(0, 3) 
+            : 'not an array'
+        });
+
+        // Convert to array and validate
         const embedding = Array.isArray(rawEmbedding) 
-          ? rawEmbedding.map(Number)
+          ? rawEmbedding.map(val => {
+              const num = Number(val);
+              if (isNaN(num)) {
+                throw new Error(`Invalid embedding value in chunk ${index + 1}`);
+              }
+              return num;
+            })
           : [];
 
         // Validate the embedding
