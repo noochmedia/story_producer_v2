@@ -1,11 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { Pinecone } from '@pinecone-database/pinecone'
 import { generateEmbedding } from '../../../lib/document-processing'
+import { put } from '@vercel/blob'
+import { Buffer } from 'buffer'
+
+// Type definitions
+interface ProcessedFile {
+  text: string;
+  name: string;
+  blob?: {
+    url: string;
+    pathname: string;
+  };
+}
+
+interface UploadResult {
+  success: boolean;
+  fileName: string;
+  error?: string;
+}
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-async function processFile(file: File): Promise<{ text: string; name: string }> {
+async function processFile(file: File): Promise<ProcessedFile> {
   const bytes = await file.arrayBuffer()
   const buffer = Buffer.from(bytes)
   
@@ -23,7 +41,19 @@ async function processFile(file: File): Promise<{ text: string; name: string }> 
     text = buffer.toString('utf-8') // Replace with proper DOCX extraction
   }
 
-  return { text, name: file.name }
+  // Upload to Vercel Blob
+  console.log(`[Blob] Attempting to upload ${file.name} to Vercel Blob...`)
+  try {
+    const blob = await put(file.name, file, {
+      access: 'public',
+    })
+    console.log(`[Blob] Successfully uploaded ${file.name} to Vercel Blob:`, blob)
+    return { text, name: file.name, blob }
+  } catch (error) {
+    console.error(`[Blob] Failed to upload ${file.name} to Vercel Blob:`, error)
+    // Continue with just the text content if Blob upload fails
+    return { text, name: file.name }
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -41,7 +71,8 @@ export async function POST(request: NextRequest) {
 
     // Get form data
     const formData = await request.formData()
-    console.log('FormData entries:', Array.from(formData.entries()).map(([key, value]) => ({
+    const entries = Array.from(formData.entries()) as [string, File | string][];
+    console.log('FormData entries:', entries.map(([key, value]) => ({
       key,
       type: value instanceof File ? 'File' : typeof value,
       fileName: value instanceof File ? value.name : null
@@ -50,13 +81,16 @@ export async function POST(request: NextRequest) {
     // Handle both single file and multiple files
     const singleFile = formData.get('file')
     const multipleFiles = formData.getAll('files')
-    const files = singleFile ? [singleFile] : multipleFiles as File[]
+    
+    // Ensure we only process File objects
+    const files = (singleFile instanceof File ? [singleFile] : 
+                  multipleFiles.filter((f): f is File => f instanceof File))
 
     console.log('Files array length:', files.length);
-    console.log('Files details:', files.map(f => ({
-      name: f.name,
-      type: f.type,
-      size: f.size
+    console.log('Files details:', files.map(file => ({
+      name: file.name,
+      type: file.type,
+      size: file.size
     })));
 
     if (!files.length) {
@@ -71,10 +105,10 @@ export async function POST(request: NextRequest) {
     const index = pinecone.index(process.env.PINECONE_INDEX);
 
     // Process each file
-    const results = await Promise.all(files.map(async (file) => {
+    const results: UploadResult[] = await Promise.all(files.map(async (file: File) => {
       try {
         // Extract text from file
-        const { text, name } = await processFile(file)
+        const { text, name, blob } = await processFile(file)
         
         if (!text.trim()) {
           throw new Error(`No content extracted from ${name}`)
@@ -83,16 +117,26 @@ export async function POST(request: NextRequest) {
         // Generate embedding
         const embedding = await generateEmbedding(text)
 
-        // Store in Pinecone
+        // Store in Pinecone with Blob URL if available
+        const metadata: any = {
+          fileName: name,
+          content: text,
+          type: 'source',
+          uploadedAt: new Date().toISOString()
+        }
+        
+        // Add Blob URL to metadata if available
+        if (blob) {
+          metadata.fileUrl = blob.url
+          console.log(`[Pinecone] Including Blob URL in metadata: ${blob.url}`)
+        } else {
+          console.log(`[Pinecone] No Blob URL available for ${name}`)
+        }
+
         await index.upsert([{
           id: `source_${Date.now()}_${name}`,
           values: embedding,
-          metadata: {
-            fileName: name,
-            content: text,
-            type: 'source',
-            uploadedAt: new Date().toISOString()
-          }
+          metadata
         }])
 
         return { success: true, fileName: name }
