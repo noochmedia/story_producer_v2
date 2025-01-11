@@ -68,13 +68,24 @@ export async function processSourcesInChunks(
   const maxChunks = isOverviewQuery ? MAX_CHUNKS * 2 : MAX_CHUNKS;
   console.log(`Using max chunks: ${maxChunks}`);
 
-  // Just validate vector dimensions
+  // Validate and convert vectors to number arrays
   sources.forEach((source, index) => {
     if (!source.values || !Array.isArray(source.values) || source.values.length !== 1536) {
       console.error(`Invalid vector in source ${index}:`, source.values);
       throw new Error(`Invalid vector format in source ${index}`);
     }
+
+    // Ensure vector values are numbers
+    source.values = source.values.map(val => {
+      const num = Number(val);
+      if (isNaN(num)) {
+        throw new Error(`Invalid vector value in source ${index}`);
+      }
+      return num;
+    });
   });
+
+  console.log('Validated vectors for all sources');
 
   // Split sources into chunks based on token count
   const chunks: PineconeMatch[][] = [];
