@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { AI_CONFIG } from '../../../lib/ai-config'
 import { Pinecone, ScoredPineconeRecord } from '@pinecone-database/pinecone'
-import { generateEmbedding } from '../../../lib/document-processing'
 import { queryMemory, storeMemory, formatMemoryForAI } from '../../../lib/ai-memory'
 import { analyzeSourceCategories, processUserChoice, createFinalSummary } from '../../../lib/interactive-search'
 import { OpenRouterClient } from '../../../lib/openrouter-client'
@@ -20,6 +19,36 @@ interface TimestampedLine {
 }
 
 type PineconeMatch = ScoredPineconeRecord<SourceMetadata>;
+
+/**
+ * Generate embeddings using Pinecone's hosted model.
+ * @param input - Text input to embed
+ * @returns Array of embeddings
+ */
+async function generateQueryEmbedding(input: string): Promise<number[]> {
+  const response = await fetch('https://api.pinecone.io/inference/embed', {
+    method: 'POST',
+    headers: {
+      'Api-Key': process.env.PINECONE_API_KEY!,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      model: 'multilingual-e5-large',
+      inputs: [input],
+      parameters: {
+        input_type: 'query',
+        truncate: 'END'
+      }
+    })
+  });
+
+  if (!response.ok) {
+    throw new Error(`Pinecone embedding API error: ${response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.embeddings[0];
+}
 
 function getContentPreview(content: any): string {
   if (typeof content === 'string') {
@@ -109,16 +138,9 @@ async function queryPineconeForContext(query: string, stage: string, controller:
       });
     } else {
       console.log('Generating embedding for specific query:', query);
-      const embeddingResults = await generateEmbedding(query);
       
-      if (!embeddingResults || embeddingResults.length === 0) {
-        console.error('No valid embeddings generated');
-        controller.enqueue(new TextEncoder().encode("I couldn't process your query effectively. Could you try rephrasing it?"));
-        return [];
-      }
-
-      // Use the embedding directly
-      const vector = embeddingResults[0].embedding;
+      // Generate embedding using Pinecone's hosted model
+      const vector = await generateQueryEmbedding(query);
 
       // Log vector details
       console.log('Vector details:', {
