@@ -63,20 +63,30 @@ async function generatePineconeEmbeddings(inputs: string[]): Promise<number[][]>
  * Using a sophisticated approach with overlap and proper boundaries.
  */
 function splitIntoChunks(text: string): string[] {
+  console.log('[CHUNK] Input text type:', typeof text);
+  console.log('[CHUNK] Input text sample:', text.slice(0, 200));
+
   // Handle both raw text and JSON-stringified timestamped content
   let cleanText = '';
   try {
     // Try to parse as JSON first (for timestamped content)
     const parsed = JSON.parse(text);
+    console.log('[CHUNK] Successfully parsed JSON:', typeof parsed);
     if (Array.isArray(parsed)) {
       cleanText = parsed
-        .map(line => line.content || '')
+        .map(line => {
+          console.log('[CHUNK] Processing line:', line);
+          return line.content || '';
+        })
         .filter(content => content.trim() && !content.includes('Inaudible'))
         .join('\n');
+    } else if (typeof parsed === 'object' && parsed.content) {
+      cleanText = parsed.content;
     } else {
       cleanText = text;
     }
   } catch (e) {
+    console.log('[CHUNK] Not JSON, using raw text');
     // If not JSON, treat as raw text
     cleanText = text;
   }
@@ -88,8 +98,9 @@ function splitIntoChunks(text: string): string[] {
     .replace(/\s+/g, ' ')
     .trim();
 
-  // Log the cleaned text length
+  // Log the cleaned text length and sample
   console.log(`[CHUNK] Cleaned text length: ${cleanText.length} chars`);
+  console.log('[CHUNK] Cleaned text sample:', cleanText.slice(0, 200));
 
   // Handle empty or too short text
   if (!cleanText || cleanText.length < MIN_CHUNK_LENGTH) {
@@ -136,6 +147,9 @@ function splitIntoChunks(text: string): string[] {
   }
 
   console.log(`[CHUNK] Created ${chunks.length} chunks`);
+  if (chunks.length > 0) {
+    console.log('[CHUNK] First chunk sample:', chunks[0].slice(0, 200));
+  }
   return chunks;
 }
 
@@ -146,22 +160,32 @@ function splitIntoChunks(text: string): string[] {
  */
 export async function generateEmbedding(text: string): Promise<Array<{chunk: string; embedding: number[]}>> {
   try {
+    console.log('[EMBED] Starting text processing');
+    console.log('[EMBED] Input text type:', typeof text);
+    console.log('[EMBED] Input text sample:', text.slice(0, 200));
+
     const chunks = splitIntoChunks(text);
-    console.log(`Split text into ${chunks.length} chunks`);
+    console.log(`[EMBED] Split text into ${chunks.length} chunks`);
 
     if (chunks.length === 0) {
+      console.error('[EMBED] No chunks generated. Input text:', {
+        type: typeof text,
+        length: text.length,
+        sample: text.slice(0, 500)
+      });
       throw new Error('No valid chunks generated from text');
     }
 
     const validChunks = chunks.filter((chunk, index) => {
       if (chunk.length < MIN_CHUNK_LENGTH) {
-        console.log(`Skipping chunk ${index + 1} (${chunk.length} chars) - too short`);
+        console.log(`[EMBED] Skipping chunk ${index + 1} (${chunk.length} chars) - too short`);
         return false;
       }
       return true;
     });
 
     if (validChunks.length === 0) {
+      console.error('[EMBED] No valid chunks after filtering. Original chunks:', chunks);
       throw new Error('No valid chunks remaining after filtering');
     }
 
@@ -171,7 +195,7 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
 
     for (let i = 0; i < validChunks.length; i += BATCH_SIZE) {
       const batchChunks = validChunks.slice(i, i + BATCH_SIZE);
-      console.log(`Processing batch ${i/BATCH_SIZE + 1}, chunks ${i + 1} to ${Math.min(i + BATCH_SIZE, validChunks.length)}`);
+      console.log(`[EMBED] Processing batch ${i/BATCH_SIZE + 1}, chunks ${i + 1} to ${Math.min(i + BATCH_SIZE, validChunks.length)}`);
 
       try {
         // Generate embeddings for the batch
@@ -188,7 +212,7 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
           }
 
           // Log validation success
-          console.log(`Validated embedding for chunk ${i + index + 1}:`, {
+          console.log(`[EMBED] Validated embedding for chunk ${i + index + 1}:`, {
             type: typeof embedding,
             isArray: Array.isArray(embedding),
             length: embedding.length,
@@ -202,14 +226,14 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
           });
         });
       } catch (error) {
-        console.error(`Error processing batch starting at chunk ${i + 1}:`, error);
+        console.error(`[EMBED] Error processing batch starting at chunk ${i + 1}:`, error);
         throw error;
       }
     }
 
     return results;
   } catch (error) {
-    console.error("Error generating embeddings:", error);
+    console.error("[EMBED] Error generating embeddings:", error);
     throw error;
   }
 }
@@ -220,5 +244,10 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
  * @returns {Promise<string>} - The processed content.
  */
 export async function processDocument(content: string): Promise<string> {
+  console.log('[PROCESS] Processing document content:', {
+    type: typeof content,
+    length: content.length,
+    sample: content.slice(0, 200)
+  });
   return content.trim();
 }
