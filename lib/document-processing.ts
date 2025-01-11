@@ -131,32 +131,38 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
     const results = await Promise.all(validChunks.map(async (chunk, index) => {
       console.log(`Generating embedding for chunk ${index + 1}/${validChunks.length} (${chunk.length} chars)`);
       
-      const response = await openai.embeddings.create({
-        model: "text-embedding-ada-002",
-        input: chunk,
-      });
+      try {
+        const response = await openai.embeddings.create({
+          model: "text-embedding-ada-002",
+          input: chunk,
+        });
 
-      if (!response.data?.[0]?.embedding) {
-        throw new Error(`Failed to generate embedding for chunk ${index + 1}`);
+        if (!response.data?.[0]?.embedding) {
+          throw new Error(`Failed to generate embedding for chunk ${index + 1}`);
+        }
+
+        // Ensure embedding values are numbers
+        const embedding = response.data[0].embedding.map(val => Number(val));
+        
+        // Validate embedding dimensions (should be 1536 for text-embedding-ada-002)
+        if (embedding.length !== 1536) {
+          throw new Error(`Invalid embedding dimensions for chunk ${index + 1}: ${embedding.length}`);
+        }
+
+        // Validate embedding values
+        if (!embedding.every(val => typeof val === 'number' && !isNaN(val))) {
+          throw new Error(`Invalid embedding values detected in chunk ${index + 1}`);
+        }
+
+        console.log(`Successfully generated embedding for chunk ${index + 1}`);
+        return {
+          chunk,
+          embedding: embedding // Use the validated number array
+        };
+      } catch (error) {
+        console.error(`Error generating embedding for chunk ${index + 1}:`, error);
+        throw error;
       }
-
-      const embedding = response.data[0].embedding;
-      
-      // Validate embedding dimensions (should be 1536 for text-embedding-ada-002)
-      if (embedding.length !== 1536) {
-        throw new Error(`Invalid embedding dimensions for chunk ${index + 1}: ${embedding.length}`);
-      }
-
-      // Validate embedding values
-      if (!embedding.every(val => typeof val === 'number' && !isNaN(val))) {
-        throw new Error(`Invalid embedding values detected in chunk ${index + 1}`);
-      }
-
-      console.log(`Successfully generated embedding for chunk ${index + 1}`);
-      return {
-        chunk,
-        embedding
-      };
     }));
 
     return results.filter(Boolean); // Remove any undefined results
