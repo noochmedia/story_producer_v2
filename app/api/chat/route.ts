@@ -91,7 +91,7 @@ async function queryPineconeForContext(query: string, stage: string, controller:
     if (isOverviewQuery) {
       console.log('Using metadata-only query for overview');
       // Create a zero vector
-      const vector = Array(1536).fill(0);
+      const vector = new Array(1536).fill(0);
 
       // Log vector details
       console.log('Vector details:', {
@@ -101,13 +101,11 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         sample: vector.slice(0, 3)
       });
 
-      // Query the index
+      // Query the index with minimal options
       queryResponse = await index.query({
-        vector: vector,
+        vector,
         topK: 100,
-        includeValues: false,
-        includeMetadata: true,
-        filter: { type: { $eq: 'source' } }
+        includeMetadata: true
       });
     } else {
       console.log('Generating embedding for specific query:', query);
@@ -119,30 +117,22 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         return [];
       }
 
-      // Extract embedding and ensure it's a plain array of numbers
-      const embedding = embeddingResults[0].embedding;
-      
-      // Convert to a plain array of numbers and validate
-      const vector = Array.from(embedding).map(val => {
-        const num = Number(val);
-        if (isNaN(num)) {
-          throw new Error('Invalid vector value detected');
-        }
-        return num;
+      // Use the embedding directly
+      const vector = embeddingResults[0].embedding;
+
+      // Log vector details
+      console.log('Vector details:', {
+        type: typeof vector,
+        isArray: Array.isArray(vector),
+        length: vector.length,
+        sample: vector.slice(0, 3)
       });
 
-      // Additional validation
-      if (!Array.isArray(vector) || vector.length !== 1536) {
-        throw new Error(`Invalid vector dimensions: expected 1536, got ${vector.length}`);
-      }
-
-      // Query the index
+      // Query the index with minimal options
       queryResponse = await index.query({
-        vector: vector,
+        vector,
         topK: 10,
-        includeValues: false,
-        includeMetadata: true,
-        filter: { type: { $eq: 'source' } }
+        includeMetadata: true
       });
     }
   } catch (error) {
