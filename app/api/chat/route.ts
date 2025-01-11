@@ -165,14 +165,14 @@ export async function POST(req: Request) {
         new ReadableStream({
           async start(controller) {
             try {
-              // First check AI's memory
-              const relevantMemories = await queryMemory(userMessage.content);
-              const memoryContext = formatMemoryForAI(relevantMemories);
-
               // Start with base system message including project details
               systemMessage = getBaseSystemMessage(projectDetails);
 
               if (deepDive) {
+                // Only check memory and query sources in deep dive mode
+                const relevantMemories = await queryMemory(userMessage.content);
+                const memoryContext = formatMemoryForAI(relevantMemories);
+
                 console.log('Starting source search for:', userMessage.content);
                 try {
                   // Update status to analyzing
@@ -255,10 +255,11 @@ export async function POST(req: Request) {
                   }
                 }
               } else {
+                // In normal mode, just respond without querying sources
                 systemMessage += `\nNote that I'm not currently using the interview transcripts. If you'd like me to check the transcripts, please enable the "Use sources" option.`;
                 
                 const response = await openai.chat.completions.create({
-                    model: AI_CONFIG.model,
+                  model: AI_CONFIG.model,
                   messages: [
                     { role: 'system', content: systemMessage },
                     ...messages.slice(-5)
