@@ -91,8 +91,11 @@ async function queryPineconeForContext(query: string, stage: string, controller:
     if (isOverviewQuery) {
       console.log('Using metadata-only query for overview');
       // For overview queries, just get all sources
+      // Create a properly formatted zero vector for overview queries
+      const zeroVector = Array.from({ length: 1536 }, () => 0.0);
+      
       queryResponse = await index.query({
-        vector: Array(1536).fill(0),
+        vector: zeroVector,
         topK: 100,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
@@ -107,13 +110,26 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         return [];
       }
 
-      // Use the embedding directly since it's already validated in generateEmbedding
+      // Ensure the embedding is properly formatted as an array of numbers
       const queryEmbedding = embeddingResults[0].embedding;
-      console.log('Querying Pinecone with vector length:', queryEmbedding.length);
-      console.log('First few values:', queryEmbedding.slice(0, 3));
+      if (!Array.isArray(queryEmbedding) || queryEmbedding.length !== 1536) {
+        throw new Error(`Invalid embedding dimensions: ${queryEmbedding.length}`);
+      }
+
+      // Convert to proper number array and validate
+      const formattedVector = Array.from(queryEmbedding).map(val => {
+        const num = Number(val);
+        if (isNaN(num)) {
+          throw new Error('Invalid embedding value detected');
+        }
+        return num;
+      });
+
+      console.log('Querying Pinecone with validated vector length:', formattedVector.length);
+      console.log('First few values:', formattedVector.slice(0, 3));
       
       queryResponse = await index.query({
-        vector: queryEmbedding,
+        vector: formattedVector,
         topK: 10,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
