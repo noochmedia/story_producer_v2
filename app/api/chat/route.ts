@@ -90,31 +90,22 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   try {
     if (isOverviewQuery) {
       console.log('Using metadata-only query for overview');
-      // Create a pure array of zeros
-      const zeroVector = [];
-      for (let i = 0; i < 1536; i++) {
-        zeroVector.push(0);
-      }
-
-      // Log the vector details
-      console.log('Zero vector details:', {
-        type: typeof zeroVector,
-        isArray: Array.isArray(zeroVector),
-        length: zeroVector.length,
-        sample: zeroVector.slice(0, 3),
-        stringified: JSON.stringify(zeroVector.slice(0, 3))
-      });
-
-      // Create a minimal query payload
+      // Use a simple array of zeros
       const queryPayload = {
-        vector: zeroVector,
+        vector: new Array(1536).fill(0),
         topK: 100,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
       };
 
       // Log the exact payload being sent
-      console.log('Query payload:', JSON.stringify(queryPayload));
+      console.log('Query payload:', {
+        vectorType: typeof queryPayload.vector,
+        isArray: Array.isArray(queryPayload.vector),
+        length: queryPayload.vector.length,
+        sample: queryPayload.vector.slice(0, 3),
+        fullPayload: JSON.stringify(queryPayload)
+      });
 
       queryResponse = await index.query(queryPayload);
     } else {
@@ -144,31 +135,22 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         throw new Error(`Invalid vector dimensions: expected 1536, got ${vector.length}`);
       }
 
-      // Convert embedding to pure array of numbers
-      const queryVector = [];
-      for (let i = 0; i < vector.length; i++) {
-        queryVector.push(Number(vector[i]));
-      }
-
-      // Log the vector details
-      console.log('Query vector details:', {
-        type: typeof queryVector,
-        isArray: Array.isArray(queryVector),
-        length: queryVector.length,
-        sample: queryVector.slice(0, 3),
-        stringified: JSON.stringify(queryVector.slice(0, 3))
-      });
-
-      // Create a minimal query payload
+      // Use the raw embedding values directly
       const queryPayload = {
-        vector: queryVector,
+        vector: embedding,
         topK: 10,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
       };
 
       // Log the exact payload being sent
-      console.log('Query payload:', JSON.stringify(queryPayload));
+      console.log('Query payload:', {
+        vectorType: typeof queryPayload.vector,
+        isArray: Array.isArray(queryPayload.vector),
+        length: queryPayload.vector.length,
+        sample: queryPayload.vector.slice(0, 3),
+        fullPayload: JSON.stringify(queryPayload)
+      });
 
       queryResponse = await index.query(queryPayload);
     }
