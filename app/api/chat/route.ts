@@ -90,28 +90,25 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   try {
     if (isOverviewQuery) {
       console.log('Using metadata-only query for overview');
-      // Create and validate zero vector
-      const zeroVector = new Array(1536).fill(0);
-      
-      // Ensure vector is properly serialized
-      const queryPayload = JSON.parse(JSON.stringify({
-        vector: zeroVector,
-        topK: 100,
-        includeMetadata: true,
-        filter: { type: { $eq: 'source' } }
-      }));
+      // Create a zero vector
+      const vector = Array(1536).fill(0);
 
-      // Log the exact payload being sent
-      console.log('Query payload:', {
-        vectorType: typeof queryPayload.vector,
-        isArray: Array.isArray(queryPayload.vector),
-        length: queryPayload.vector.length,
-        sample: queryPayload.vector.slice(0, 3),
-        serializedVector: JSON.stringify(queryPayload.vector.slice(0, 3))
+      // Log vector details
+      console.log('Vector details:', {
+        type: typeof vector,
+        isArray: Array.isArray(vector),
+        length: vector.length,
+        sample: vector.slice(0, 3)
       });
 
-      // Send query to Pinecone
-      queryResponse = await index.query(queryPayload);
+      // Query the index
+      queryResponse = await index.query({
+        vector: vector,
+        topK: 100,
+        includeValues: false,
+        includeMetadata: true,
+        filter: { type: { $eq: 'source' } }
+      });
     } else {
       console.log('Generating embedding for specific query:', query);
       const embeddingResults = await generateEmbedding(query);
@@ -139,25 +136,14 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         throw new Error(`Invalid vector dimensions: expected 1536, got ${vector.length}`);
       }
 
-      // Ensure vector is properly serialized
-      const queryPayload = JSON.parse(JSON.stringify({
-        vector: embedding,
+      // Query the index
+      queryResponse = await index.query({
+        vector: vector,
         topK: 10,
+        includeValues: false,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
-      }));
-
-      // Log the exact payload being sent
-      console.log('Query payload:', {
-        vectorType: typeof queryPayload.vector,
-        isArray: Array.isArray(queryPayload.vector),
-        length: queryPayload.vector.length,
-        sample: queryPayload.vector.slice(0, 3),
-        serializedVector: JSON.stringify(queryPayload.vector.slice(0, 3))
       });
-
-      // Send query to Pinecone
-      queryResponse = await index.query(queryPayload);
     }
   } catch (error) {
     // Enhanced error logging
