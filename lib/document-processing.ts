@@ -134,38 +134,36 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
           input: chunk,
         });
 
-        // Extract the raw embedding
+        // Extract raw embedding
         const rawEmbedding = response.data[0].embedding;
 
-        // Convert to Float32Array for consistent numeric format
-        const float32Array = new Float32Array(rawEmbedding.length);
+        // Create a pure array of numbers
+        const embedding = [];
         for (let i = 0; i < rawEmbedding.length; i++) {
           const num = Number(rawEmbedding[i]);
           if (isNaN(num)) {
             throw new Error('Invalid vector value detected');
           }
-          float32Array[i] = num;
+          embedding.push(num);
         }
 
         // Validate dimensions
-        if (float32Array.length !== 1536) {
-          throw new Error(`Invalid embedding array length: ${float32Array.length}`);
+        if (embedding.length !== 1536) {
+          throw new Error(`Invalid embedding array length: ${embedding.length}`);
         }
-
-        // Convert back to plain array for storage
-        const embedding = Array.from(float32Array);
 
         // Log validation success
         console.log(`Validated embedding for chunk ${index + 1}:`, {
-          dimension: embedding.length,
+          type: typeof embedding,
+          isArray: Array.isArray(embedding),
+          length: embedding.length,
           sample: embedding.slice(0, 3),
-          type: 'Float32Array converted to plain array',
-          sampleJson: JSON.stringify(embedding.slice(0, 3))
+          stringified: JSON.stringify(embedding.slice(0, 3))
         });
         
         return {
           chunk,
-          embedding
+          embedding: embedding
         };
       } catch (error) {
         console.error(`Error generating embedding for chunk ${index + 1}:`, error);

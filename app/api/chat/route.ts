@@ -90,30 +90,31 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   try {
     if (isOverviewQuery) {
       console.log('Using metadata-only query for overview');
-      // Create a pure array of numbers for the vector
-      const queryVector = Array(1536).fill(0).map(Number);
-      
-      // Validate vector format
-      if (!Array.isArray(queryVector) || queryVector.some(val => typeof val !== "number" || isNaN(val))) {
-        throw new Error("Query vector is not a valid numerical array");
+      // Create a pure array of zeros
+      const zeroVector = [];
+      for (let i = 0; i < 1536; i++) {
+        zeroVector.push(0);
       }
 
-      // Log the complete payload for debugging
+      // Log the vector details
+      console.log('Zero vector details:', {
+        type: typeof zeroVector,
+        isArray: Array.isArray(zeroVector),
+        length: zeroVector.length,
+        sample: zeroVector.slice(0, 3),
+        stringified: JSON.stringify(zeroVector.slice(0, 3))
+      });
+
+      // Create a minimal query payload
       const queryPayload = {
-        vector: queryVector,
+        vector: zeroVector,
         topK: 100,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
       };
 
-      console.log('Pinecone query payload:', JSON.stringify(queryPayload, null, 2));
-      console.log('Vector validation:', {
-        isArray: Array.isArray(queryVector),
-        length: queryVector.length,
-        sample: queryVector.slice(0, 3),
-        allNumbers: queryVector.every(v => typeof v === 'number' && !isNaN(v)),
-        serializedSample: JSON.stringify(queryVector.slice(0, 3))
-      });
+      // Log the exact payload being sent
+      console.log('Query payload:', JSON.stringify(queryPayload));
 
       queryResponse = await index.query(queryPayload);
     } else {
@@ -143,15 +144,22 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         throw new Error(`Invalid vector dimensions: expected 1536, got ${vector.length}`);
       }
 
-      // Ensure vector is a pure array of numbers
-      const queryVector = Array.from(vector, Number);
-      
-      // Validate vector format
-      if (!Array.isArray(queryVector) || queryVector.some(val => typeof val !== "number" || isNaN(val))) {
-        throw new Error("Query vector is not a valid numerical array");
+      // Convert embedding to pure array of numbers
+      const queryVector = [];
+      for (let i = 0; i < vector.length; i++) {
+        queryVector.push(Number(vector[i]));
       }
 
-      // Log the complete payload for debugging
+      // Log the vector details
+      console.log('Query vector details:', {
+        type: typeof queryVector,
+        isArray: Array.isArray(queryVector),
+        length: queryVector.length,
+        sample: queryVector.slice(0, 3),
+        stringified: JSON.stringify(queryVector.slice(0, 3))
+      });
+
+      // Create a minimal query payload
       const queryPayload = {
         vector: queryVector,
         topK: 10,
@@ -159,14 +167,8 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         filter: { type: { $eq: 'source' } }
       };
 
-      console.log('Pinecone query payload:', JSON.stringify(queryPayload, null, 2));
-      console.log('Vector validation:', {
-        isArray: Array.isArray(queryVector),
-        length: queryVector.length,
-        sample: queryVector.slice(0, 3),
-        allNumbers: queryVector.every(v => typeof v === 'number' && !isNaN(v)),
-        serializedSample: JSON.stringify(queryVector.slice(0, 3))
-      });
+      // Log the exact payload being sent
+      console.log('Query payload:', JSON.stringify(queryPayload));
 
       queryResponse = await index.query(queryPayload);
     }
