@@ -147,32 +147,24 @@ export async function POST(request: NextRequest) {
 
         // Store each chunk in Pinecone with improved metadata
         const timestamp = Date.now();
-        const chunks = embeddingResults.map((result, i) => {
-          // Ensure vector values are numbers
-          const validVector = result.embedding.map(val => Number(val));
-          if (!validVector.every(val => typeof val === 'number' && !isNaN(val))) {
-            throw new Error(`Invalid vector values in chunk ${i}`);
+        const chunks = embeddingResults.map((result, i) => ({
+          id: `source_${timestamp}_${name}_chunk${i}`,
+          values: result.embedding, // Use embedding directly
+          metadata: {
+            fileName: name,
+            content: result.chunk,
+            type: 'source',
+            uploadedAt: new Date().toISOString(),
+            chunkIndex: i,
+            totalChunks: embeddingResults.length,
+            chunkLength: result.chunk.length,
+            ...(blob && {
+              fileUrl: blob.url,
+              filePath: blob.pathname,
+              fileType: file.type || undefined
+            })
           }
-
-          return {
-            id: `source_${timestamp}_${name}_chunk${i}`,
-            values: validVector,
-            metadata: {
-              fileName: name,
-              content: result.chunk,
-              type: 'source',
-              uploadedAt: new Date().toISOString(),
-              chunkIndex: i,
-              totalChunks: embeddingResults.length,
-              chunkLength: result.chunk.length,
-              ...(blob && {
-                fileUrl: blob.url,
-                filePath: blob.pathname,
-                fileType: file.type || undefined
-              })
-            }
-          };
-        });
+        }));
 
         // Batch upsert chunks for better performance
         const BATCH_SIZE = 100;

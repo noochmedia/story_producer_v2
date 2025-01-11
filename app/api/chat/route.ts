@@ -90,13 +90,13 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   try {
     if (isOverviewQuery) {
       console.log('Using metadata-only query for overview');
-      // For overview queries, just get all sources without vector search
+      // For overview queries, use a neutral vector
       const neutralVector = Array.from({ length: 1536 }, () => 0);
       queryResponse = await index.query({
         vector: neutralVector,
+        filter: { type: { $eq: 'source' } },
         topK: 100,
-        includeMetadata: true,
-        filter: { type: { $eq: 'source' } }
+        includeMetadata: true
       });
     } else {
       console.log('Generating embedding for specific query:', query);
@@ -109,20 +109,10 @@ async function queryPineconeForContext(query: string, stage: string, controller:
       }
 
       const queryEmbedding = embeddingResults[0].embedding;
-      if (!queryEmbedding || !Array.isArray(queryEmbedding) || queryEmbedding.length !== 1536) {
-        console.error('Invalid embedding generated:', queryEmbedding);
-        throw new Error('Invalid embedding generated for query');
-      }
-
-      // Ensure vector values are numbers and not objects
-      const validVector = queryEmbedding.map(val => Number(val));
-      if (!validVector.every(val => typeof val === 'number' && !isNaN(val))) {
-        throw new Error('Invalid vector values');
-      }
-
-      console.log('Querying Pinecone with specific vector');
+      console.log('Querying Pinecone with vector length:', queryEmbedding.length);
+      
       queryResponse = await index.query({
-        vector: validVector,
+        vector: queryEmbedding,
         topK: 10,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }

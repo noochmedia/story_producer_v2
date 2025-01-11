@@ -132,33 +132,28 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
       console.log(`Generating embedding for chunk ${index + 1}/${validChunks.length} (${chunk.length} chars)`);
       
       try {
-        const response = await openai.embeddings.create({
-          model: "text-embedding-ada-002",
-          input: chunk,
-        });
+      const response = await openai.embeddings.create({
+        model: "text-embedding-ada-002",
+        input: chunk,
+      });
 
-        if (!response.data?.[0]?.embedding) {
-          throw new Error(`Failed to generate embedding for chunk ${index + 1}`);
-        }
+      if (!response.data?.[0]?.embedding) {
+        throw new Error(`Failed to generate embedding for chunk ${index + 1}`);
+      }
 
-        // Ensure embedding values are numbers
-        const embedding = response.data[0].embedding.map(val => Number(val));
-        
-        // Validate embedding dimensions (should be 1536 for text-embedding-ada-002)
-        if (embedding.length !== 1536) {
-          throw new Error(`Invalid embedding dimensions for chunk ${index + 1}: ${embedding.length}`);
-        }
+      // Use embedding directly without modification
+      const embedding = response.data[0].embedding;
+      
+      // Just validate dimensions
+      if (embedding.length !== 1536) {
+        throw new Error(`Invalid embedding dimensions for chunk ${index + 1}: ${embedding.length}`);
+      }
 
-        // Validate embedding values
-        if (!embedding.every(val => typeof val === 'number' && !isNaN(val))) {
-          throw new Error(`Invalid embedding values detected in chunk ${index + 1}`);
-        }
-
-        console.log(`Successfully generated embedding for chunk ${index + 1}`);
-        return {
-          chunk,
-          embedding: embedding // Use the validated number array
-        };
+      console.log(`Successfully generated embedding for chunk ${index + 1}`);
+      return {
+        chunk,
+        embedding
+      };
       } catch (error) {
         console.error(`Error generating embedding for chunk ${index + 1}:`, error);
         throw error;
