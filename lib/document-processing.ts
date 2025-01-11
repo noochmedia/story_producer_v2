@@ -9,56 +9,69 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY 
 });
 
-// Maximum tokens for text-embedding-ada-002
-const MAX_CHUNK_TOKENS = 8000;
+// Maximum tokens for text-embedding-ada-002 (reduced for safety)
+const MAX_CHUNK_TOKENS = 4000;
+const MIN_CHUNK_LENGTH = 100; // Minimum characters per chunk
+const OVERLAP_SIZE = 200; // Characters to overlap between chunks for context
 
 /**
  * Split text into chunks that fit within token limits.
- * Using a simple character-based approach as a rough approximation.
- * On average, 1 token = 4 characters in English.
+ * Using a more sophisticated approach with overlap and proper boundaries.
  */
 function splitIntoChunks(text: string): string[] {
+  // Clean and normalize the text
+  const cleanText = text
+    .replace(/\s+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  if (cleanText.length <= MIN_CHUNK_LENGTH) {
+    return [cleanText];
+  }
+
+  const chunks: string[] = [];
   const avgCharsPerToken = 4;
   const maxChunkLength = MAX_CHUNK_TOKENS * avgCharsPerToken;
-  const chunks: string[] = [];
   
-  // Split into paragraphs first
-  const paragraphs = text.split(/\n\s*\n/);
+  let startIndex = 0;
   
-  let currentChunk = '';
-  
-  for (const paragraph of paragraphs) {
-    // If adding this paragraph would exceed the chunk size
-    if ((currentChunk + paragraph).length > maxChunkLength) {
-      if (currentChunk) {
-        chunks.push(currentChunk.trim());
-        currentChunk = '';
-      }
-      
-      // If the paragraph itself is too long, split it
-      if (paragraph.length > maxChunkLength) {
-        const words = paragraph.split(/\s+/);
-        for (const word of words) {
-          if ((currentChunk + ' ' + word).length > maxChunkLength) {
-            chunks.push(currentChunk.trim());
-            currentChunk = word;
-          } else {
-            currentChunk += (currentChunk ? ' ' : '') + word;
-          }
-        }
-      } else {
-        currentChunk = paragraph;
-      }
-    } else {
-      currentChunk += (currentChunk ? '\n\n' : '') + paragraph;
+  while (startIndex < cleanText.length) {
+    // Calculate the potential end of this chunk
+    let endIndex = startIndex + maxChunkLength;
+    
+    // If we're at the end of the text
+    if (endIndex >= cleanText.length) {
+      chunks.push(cleanText.slice(startIndex));
+      break;
     }
+    
+    // Find the last sentence boundary within our limit
+    let boundaryIndex = endIndex;
+    while (boundaryIndex > startIndex + MIN_CHUNK_LENGTH) {
+      const char = cleanText[boundaryIndex];
+      if ('.!?'.includes(char) && cleanText[boundaryIndex + 1] === ' ') {
+        break;
+      }
+      boundaryIndex--;
+    }
+    
+    // If no good boundary found, fall back to last space
+    if (boundaryIndex <= startIndex + MIN_CHUNK_LENGTH) {
+      boundaryIndex = cleanText.lastIndexOf(' ', endIndex);
+    }
+    
+    // Extract the chunk
+    const chunk = cleanText.slice(startIndex, boundaryIndex + 1).trim();
+    if (chunk.length >= MIN_CHUNK_LENGTH) {
+      chunks.push(chunk);
+    }
+    
+    // Move the start index back by the overlap amount
+    startIndex = boundaryIndex - OVERLAP_SIZE;
+    if (startIndex < 0) startIndex = 0;
   }
   
-  if (currentChunk) {
-    chunks.push(currentChunk.trim());
-  }
-  
-  return chunks;
+  return chunks.filter(chunk => chunk.length >= MIN_CHUNK_LENGTH);
 }
 
 /**
@@ -76,23 +89,45 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
     const chunks = splitIntoChunks(text);
     console.log(`Split text into ${chunks.length} chunks`);
 
+    if (chunks.length === 0) {
+      throw new Error('No valid chunks generated from text');
+    }
+
     // Generate embeddings for each chunk
-    const results = await Promise.all(chunks.map(async (chunk) => {
-      console.log('Generating embedding for chunk:', chunk.substring(0, 50) + '...');
+    const results = await Promise.all(chunks.map(async (chunk, index) => {
+      console.log(`Generating embedding for chunk ${index + 1}/${chunks.length} (${chunk.length} chars)`);
+      
+      // Validate chunk
+      if (chunk.length < MIN_CHUNK_LENGTH) {
+        throw new Error(`Chunk ${index + 1} is too short (${chunk.length} chars)`);
+      }
+      
       const response = await openai.embeddings.create({
         model: "text-embedding-ada-002",
         input: chunk,
       });
 
-      if (response.data && response.data.length > 0) {
-        console.log('Embedding generated successfully for chunk');
-        return {
-          chunk,
-          embedding: response.data[0].embedding
-        };
-      } else {
-        throw new Error("Failed to generate embedding: No data in response.");
+      if (!response.data?.[0]?.embedding) {
+        throw new Error(`Failed to generate embedding for chunk ${index + 1}`);
       }
+
+      const embedding = response.data[0].embedding;
+      
+      // Validate embedding dimensions (should be 1536 for text-embedding-ada-002)
+      if (embedding.length !== 1536) {
+        throw new Error(`Invalid embedding dimensions for chunk ${index + 1}: ${embedding.length}`);
+      }
+
+      // Validate embedding values
+      if (!embedding.every(val => typeof val === 'number' && !isNaN(val))) {
+        throw new Error(`Invalid embedding values detected in chunk ${index + 1}`);
+      }
+
+      console.log(`Successfully generated embedding for chunk ${index + 1}`);
+      return {
+        chunk,
+        embedding
+      };
     }));
 
     return results;

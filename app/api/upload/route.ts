@@ -23,36 +23,63 @@ interface UploadResult {
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
+// Maximum file size (100MB)
+const MAX_FILE_SIZE = 100 * 1024 * 1024;
+
 async function processFile(file: File): Promise<ProcessedFile> {
-  const bytes = await file.arrayBuffer()
-  const buffer = Buffer.from(bytes)
-  
-  // Extract text based on file type
-  let text = ''
-  const fileName = file.name.toLowerCase()
-  
-  if (fileName.endsWith('.txt')) {
-    text = buffer.toString('utf-8')
-  } else if (fileName.endsWith('.pdf')) {
-    // Handle PDF extraction
-    text = buffer.toString('utf-8') // Replace with proper PDF extraction
-  } else if (fileName.endsWith('.docx')) {
-    // Handle DOCX extraction
-    text = buffer.toString('utf-8') // Replace with proper DOCX extraction
+  // Validate file size
+  if (file.size > MAX_FILE_SIZE) {
+    throw new Error(`File ${file.name} exceeds maximum size of 100MB`);
   }
 
-  // Upload to Vercel Blob
-  console.log(`[Blob] Attempting to upload ${file.name} to Vercel Blob...`)
+  const bytes = await file.arrayBuffer();
+  const buffer = Buffer.from(bytes);
+  
+  // Extract text based on file type
+  let text = '';
+  const fileName = file.name.toLowerCase();
+  
+  console.log(`[Process] Processing file ${fileName} (${file.size} bytes)`);
+  
   try {
-    const blob = await put(file.name, file, {
-      access: 'public',
-    })
-    console.log(`[Blob] Successfully uploaded ${file.name} to Vercel Blob:`, blob)
-    return { text, name: file.name, blob }
+    if (fileName.endsWith('.txt')) {
+      text = buffer.toString('utf-8');
+    } else if (fileName.endsWith('.pdf')) {
+      // Handle PDF extraction
+      text = buffer.toString('utf-8'); // Replace with proper PDF extraction
+    } else if (fileName.endsWith('.docx')) {
+      // Handle DOCX extraction
+      text = buffer.toString('utf-8'); // Replace with proper DOCX extraction
+    } else {
+      throw new Error(`Unsupported file type: ${fileName}`);
+    }
+
+    if (!text.trim()) {
+      throw new Error(`No content extracted from ${fileName}`);
+    }
+
+    // Only upload to Blob if text extraction was successful
+    console.log(`[Blob] Attempting to upload ${fileName} to Vercel Blob...`);
+    try {
+      const blob = await put(fileName, file, {
+        access: 'public',
+        contentType: file.type || undefined,
+        addRandomSuffix: true, // Prevent naming conflicts
+      });
+      console.log(`[Blob] Successfully uploaded ${fileName} to Vercel Blob:`, blob);
+      return { text, name: fileName, blob };
+    } catch (error) {
+      console.error(`[Blob] Failed to upload ${fileName} to Vercel Blob:`, error);
+      // If Blob upload fails but we have text content, continue with processing
+      if (text.trim()) {
+        console.log(`[Process] Continuing with text content only for ${fileName}`);
+        return { text, name: fileName };
+      }
+      throw error;
+    }
   } catch (error) {
-    console.error(`[Blob] Failed to upload ${file.name} to Vercel Blob:`, error)
-    // Continue with just the text content if Blob upload fails
-    return { text, name: file.name }
+    console.error(`[Process] Error processing file ${fileName}:`, error);
+    throw error;
   }
 }
 
@@ -118,35 +145,33 @@ export async function POST(request: NextRequest) {
         const embeddingResults = await generateEmbedding(text)
         console.log(`Generated embeddings for ${embeddingResults.length} chunks`)
 
-        // Store each chunk in Pinecone
-        const timestamp = Date.now()
-        for (let i = 0; i < embeddingResults.length; i++) {
-          const result = embeddingResults[i];
-          const metadata: any = {
+        // Store each chunk in Pinecone with improved metadata
+        const timestamp = Date.now();
+        const chunks = embeddingResults.map((result, i) => ({
+          id: `source_${timestamp}_${name}_chunk${i}`,
+          values: result.embedding,
+          metadata: {
             fileName: name,
             content: result.chunk,
             type: 'source',
             uploadedAt: new Date().toISOString(),
             chunkIndex: i,
-            totalChunks: embeddingResults.length
+            totalChunks: embeddingResults.length,
+            chunkLength: result.chunk.length,
+            ...(blob && {
+              fileUrl: blob.url,
+              filePath: blob.pathname,
+              fileType: file.type || undefined
+            })
           }
-          
-          // Add Blob URL to metadata if available
-          if (blob) {
-            metadata.fileUrl = blob.url
-            console.log(`[Pinecone] Including Blob URL in metadata for chunk ${i + 1}/${embeddingResults.length}`)
-          } else {
-            console.log(`[Pinecone] No Blob URL available for chunk ${i + 1}/${embeddingResults.length}`)
-          }
+        }));
 
-          // Store chunk in Pinecone
-          await index.upsert([{
-            id: `source_${timestamp}_${name}_chunk${i}`,
-            values: result.embedding,
-            metadata
-          }]);
-          
-          console.log(`[Pinecone] Stored chunk ${i + 1}/${embeddingResults.length}`);
+        // Batch upsert chunks for better performance
+        const BATCH_SIZE = 100;
+        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+          const batch = chunks.slice(i, i + BATCH_SIZE);
+          await index.upsert(batch);
+          console.log(`[Pinecone] Stored chunks ${i + 1} to ${Math.min(i + BATCH_SIZE, chunks.length)}/${chunks.length}`);
         }
 
         return { success: true, fileName: name }
