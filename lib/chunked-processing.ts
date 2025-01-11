@@ -31,8 +31,25 @@ export async function processSourcesInChunks(
   let currentSize = 0;
 
   for (const source of sortedSources) {
-    const content = source.metadata?.content || '';
-    if (currentSize + content.length > CHUNK_SIZE) {
+    let content = source.metadata?.content || '';
+    
+    // Try to parse JSON content and get actual text length
+    try {
+      const parsed = JSON.parse(content);
+      if (Array.isArray(parsed)) {
+        content = parsed
+          .map(line => line.content || '')
+          .filter(content => content.trim() && !content.includes('Inaudible'))
+          .join('\n');
+      }
+    } catch (e) {
+      // If not JSON, use content as-is
+    }
+
+    const contentLength = content.length;
+    console.log(`Source ${source.metadata?.fileName}: content length ${contentLength}`);
+
+    if (currentSize + contentLength > CHUNK_SIZE) {
       if (currentChunk.length > 0) {
         chunks.push(currentChunk);
         if (chunks.length >= MAX_CHUNKS) break;
@@ -41,7 +58,7 @@ export async function processSourcesInChunks(
       }
     }
     currentChunk.push(source);
-    currentSize += content.length;
+    currentSize += contentLength;
   }
   if (currentChunk.length > 0) {
     chunks.push(currentChunk);
@@ -55,8 +72,27 @@ export async function processSourcesInChunks(
 
     // Create a summary prompt for this chunk
     const chunkContent = chunk
-      .map(source => `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || ''}`)
+      .map(source => {
+        let content = source.metadata?.content || '';
+        
+        // Try to parse JSON content
+        try {
+          const parsed = JSON.parse(content);
+          if (Array.isArray(parsed)) {
+            content = parsed
+              .map(line => line.content || '')
+              .filter(content => content.trim() && !content.includes('Inaudible'))
+              .join('\n');
+          }
+        } catch (e) {
+          // If not JSON, use content as-is
+        }
+
+        return `[From ${source.metadata?.fileName || 'Unknown'}]:\n${content}`;
+      })
       .join('\n\n');
+
+    console.log(`Processing chunk with content length: ${chunkContent.length}`);
 
     // Check if we need to use OpenRouter for this chunk
     const useOpenRouter = OpenRouterClient.estimateTokens(chunkContent) > 30000;

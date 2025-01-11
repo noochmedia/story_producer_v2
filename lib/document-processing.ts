@@ -19,20 +19,43 @@ const OVERLAP_SIZE = 200; // Characters to overlap between chunks for context
  * Using a more sophisticated approach with overlap and proper boundaries.
  */
 function splitIntoChunks(text: string): string[] {
-  // Clean and normalize the text while preserving important line breaks
-  const cleanText = text
+  // Handle both raw text and JSON-stringified timestamped content
+  let cleanText = '';
+  try {
+    // Try to parse as JSON first (for timestamped content)
+    const parsed = JSON.parse(text);
+    if (Array.isArray(parsed)) {
+      cleanText = parsed
+        .map(line => line.content || '')
+        .filter(content => content.trim() && !content.includes('Inaudible'))
+        .join('\n');
+    } else {
+      cleanText = text;
+    }
+  } catch (e) {
+    // If not JSON, treat as raw text
+    cleanText = text;
+  }
+
+  // Clean and normalize
+  cleanText = cleanText
     .replace(/\r\n/g, '\n') // Normalize line endings
     .replace(/\n{3,}/g, '\n\n') // Reduce multiple blank lines to double
     .replace(/\s+/g, ' ') // Normalize spaces
     .trim();
 
-  // If text is too short, return as single chunk if it meets minimum length
-  if (cleanText.length < MIN_CHUNK_LENGTH) {
-    console.log(`[CHUNK] Text too short (${cleanText.length} chars), minimum required: ${MIN_CHUNK_LENGTH}`);
+  // Log the cleaned text length
+  console.log(`[CHUNK] Cleaned text length: ${cleanText.length} chars`);
+
+  // Handle empty or too short text
+  if (!cleanText || cleanText.length < MIN_CHUNK_LENGTH) {
+    console.log(`[CHUNK] Text too short or empty (${cleanText.length} chars), minimum required: ${MIN_CHUNK_LENGTH}`);
     return [];
   }
 
+  // If text is within token limit, return as single chunk
   if (cleanText.length <= MAX_CHUNK_TOKENS * 4) {
+    console.log(`[CHUNK] Text within token limit, returning as single chunk`);
     return [cleanText];
   }
 
