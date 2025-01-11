@@ -21,16 +21,17 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
             apiKey: process.env.PINECONE_API_KEY!,
         })
 
-        const index = pinecone.index(process.env.PINECONE_INDEX!)
+    const index = pinecone.index(process.env.PINECONE_INDEX!)
+    const sourceIndex = index.namespace('sources')
 
-        // Get the filename from the pathname
-        const filename = pathname.split('/').pop()
-        if (!filename) {
-            throw new Error('Invalid pathname')
-        }
+    // Get the filename from the pathname
+    const filename = pathname.split('/').pop()
+    if (!filename) {
+        throw new Error('Invalid pathname')
+    }
 
-        // Delete all chunks for this file from Pinecone
-        const queryResponse = await index.query({
+    // Delete all chunks for this file from Pinecone
+    const queryResponse = await sourceIndex.query({
             vector: Array(1024).fill(0), // Neutral vector for multilingual-e5-large
             topK: 10000,
             includeMetadata: true,
@@ -47,7 +48,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
             const BATCH_SIZE = 100
             for (let i = 0; i < chunkIds.length; i += BATCH_SIZE) {
                 const batch = chunkIds.slice(i, i + BATCH_SIZE)
-                await index.deleteMany(batch)
+                await sourceIndex.deleteMany(batch)
                 console.log(`[DELETE] Deleted chunks ${i + 1} to ${Math.min(i + BATCH_SIZE, chunkIds.length)}`)
             }
         } else {
