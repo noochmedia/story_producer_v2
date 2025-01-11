@@ -145,30 +145,69 @@ export async function POST(request: NextRequest) {
 
         const timestamp = Date.now();
         const chunks = embeddingResults.map((result, i) => {
-          // Convert embedding to Float32Array for consistent numeric format
-          const float32Array = new Float32Array(result.embedding);
-          
+          // Extract raw embedding and validate
+          const rawEmbedding = result.embedding;
+          console.log(`Raw embedding for chunk ${i}:`, {
+            type: typeof rawEmbedding,
+            isArray: Array.isArray(rawEmbedding),
+            length: rawEmbedding.length,
+            sample: rawEmbedding.slice(0, 3)
+          });
+
+          // Convert to array of numbers
+          const values = Array.from(rawEmbedding).map(val => {
+            const num = Number(val);
+            if (isNaN(num)) {
+              throw new Error(`Invalid vector value in chunk ${i}`);
+            }
+            return num;
+          });
+
           // Validate dimensions
-          if (float32Array.length !== 1536) {
+          if (values.length !== 1536) {
             console.error('Invalid vector structure:', {
               index: i,
-              type: 'Float32Array',
-              length: float32Array.length,
-              sample: Array.from(float32Array.slice(0, 3))
+              type: typeof values,
+              isArray: Array.isArray(values),
+              length: values.length,
+              sample: values.slice(0, 3)
             });
-            throw new Error(`Invalid vector dimensions: expected 1536, got ${float32Array.length}`);
+            throw new Error(`Invalid vector dimensions: expected 1536, got ${values.length}`);
           }
 
-          // Convert to plain array for storage
-          const values = Array.from(float32Array);
-
-          // Log the vector we're about to store
+          // Log the vector details before storage
           console.log(`Vector for chunk ${i}:`, {
-            type: 'Float32Array converted to plain array',
+            type: typeof values,
+            isArray: Array.isArray(values),
             length: values.length,
             sample: values.slice(0, 3),
+            allNumbers: values.every(v => typeof v === 'number' && !isNaN(v)),
             sampleJson: JSON.stringify(values.slice(0, 3))
           });
+
+          // Log the exact upsert payload structure
+          const chunkPayload = {
+            id: `source_${timestamp}_${name}_chunk${i}`,
+            values,
+            metadata: {
+              fileName: name,
+              content: result.chunk,
+              processedContent: result.chunk,
+              type: 'source',
+              uploadedAt: new Date().toISOString(),
+              chunkIndex: i,
+              totalChunks: embeddingResults.length,
+              chunkLength: result.chunk.length,
+              ...(blob && {
+                fileUrl: blob.url,
+                filePath: blob.pathname,
+                fileType: file.type || undefined,
+                hasBlob: true
+              }),
+              storageVersion: 'dual_storage_v1'
+            }
+          };
+          console.log(`Upsert payload for chunk ${i}:`, JSON.stringify(chunkPayload, null, 2));
 
           return {
             id: `source_${timestamp}_${name}_chunk${i}`,
