@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Pinecone } from '@pinecone-database/pinecone'
-import { generateEmbedding } from '../../../lib/document-processing'
+import { PineconeAssistant } from '../../../lib/pinecone-assistant'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -18,25 +17,21 @@ export async function GET(request: NextRequest) {
       throw new Error('PINECONE_INDEX environment variable is not set');
     }
 
-    // Initialize Pinecone
-    const pinecone = new Pinecone({
-      apiKey: process.env.PINECONE_API_KEY!
+    // Initialize Pinecone Assistant
+    const assistant = new PineconeAssistant({
+      apiKey: process.env.PINECONE_API_KEY,
+      indexName: process.env.PINECONE_INDEX
     });
 
-    const index = pinecone.index(process.env.PINECONE_INDEX);
-    const projectIndex = index.namespace('project_details');
-
-    // Use a neutral vector to get all project details
-    const neutralVector = Array.from({ length: 1024 }, () => 0);
-    const queryResponse = await projectIndex.query({
-      vector: neutralVector,
-      topK: 100, // High number to get all chunks
-      includeMetadata: true
+    // Query for project details
+    const matches = await assistant.query('', {
+      topK: 100,
+      filter: { type: { $eq: 'project_details' } }
     });
 
-    if (queryResponse.matches?.length > 0) {
+    if (matches.length > 0) {
       // Sort chunks by index and combine content
-      const sortedChunks = queryResponse.matches
+      const sortedChunks = matches
         .filter(match => match.metadata?.chunkIndex !== undefined)
         .sort((a, b) => 
           (a.metadata?.chunkIndex as number) - (b.metadata?.chunkIndex as number)
@@ -82,39 +77,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No details provided' }, { status: 400 })
     }
 
-    // Initialize Pinecone
-    const pinecone = new Pinecone({
-      apiKey: process.env.PINECONE_API_KEY!
+    // Initialize Pinecone Assistant
+    const assistant = new PineconeAssistant({
+      apiKey: process.env.PINECONE_API_KEY,
+      indexName: process.env.PINECONE_INDEX
     });
 
-    const index = pinecone.index(process.env.PINECONE_INDEX);
-    const projectIndex = index.namespace('project_details');
+    // First delete any existing project details
+    await assistant.deleteDocuments({ type: { $eq: 'project_details' } });
 
-    // Generate embeddings for the project details
-    const embeddingResults = await generateEmbedding(details);
-    
-    // Store each chunk in Pinecone
-    const timestamp = Date.now();
-    for (let i = 0; i < embeddingResults.length; i++) {
-      const result = embeddingResults[i];
-      // Ensure vector values are numbers
-      const validVector = result.embedding.map(val => Number(val));
-      if (!validVector.every(val => typeof val === 'number' && !isNaN(val))) {
-        throw new Error('Invalid vector values');
-      }
+    // Upload new project details
+    const result = await assistant.uploadDocument(details, {
+      fileName: 'project_details.txt',
+      fileType: 'text/plain',
+      uploadedAt: new Date().toISOString(),
+      type: 'project_details'
+    });
 
-      await projectIndex.upsert([{
-        id: `project_details_chunk${i}`,
-        values: validVector,
-        metadata: {
-          content: result.chunk,
-          type: 'project_details',
-          chunkIndex: i,
-          totalChunks: embeddingResults.length,
-          updatedAt: new Date().toISOString()
-        }
-      }]);
-    }
+    console.log('Successfully updated project details:', result);
 
     return NextResponse.json({ success: true })
   } catch (error) {

@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { Pinecone } from '@pinecone-database/pinecone'
-import { generateEmbedding } from '../../../lib/document-processing'
 import { put } from '@vercel/blob'
 import { Buffer } from 'buffer'
+import { PineconeAssistant } from '../../../lib/pinecone-assistant'
 
 // Type definitions
 interface ProcessedFile {
@@ -124,14 +123,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No files provided' }, { status: 400 })
     }
 
-    // Initialize Pinecone
-    const pinecone = new Pinecone({
-      apiKey: process.env.PINECONE_API_KEY!
+    // Initialize Pinecone Assistant
+    const assistant = new PineconeAssistant({
+      apiKey: process.env.PINECONE_API_KEY,
+      indexName: process.env.PINECONE_INDEX
     });
-
-    // Get index and create namespace for sources
-    const index = pinecone.index(process.env.PINECONE_INDEX);
-    const sourceIndex = index.namespace('sources');
 
     // Process each file
     const results: UploadResult[] = await Promise.all(files.map(async (file: File) => {
@@ -142,107 +138,20 @@ export async function POST(request: NextRequest) {
           throw new Error(`No content extracted from ${name}`);
         }
 
-        const embeddingResults = await generateEmbedding(text);
-        console.log(`Generated embeddings for ${embeddingResults.length} chunks`);
-
-        const timestamp = Date.now();
-        const chunks = embeddingResults.map((result, i) => {
-          // Extract raw embedding and validate
-          const rawEmbedding = result.embedding;
-          console.log(`Raw embedding for chunk ${i}:`, {
-            type: typeof rawEmbedding,
-            isArray: Array.isArray(rawEmbedding),
-            length: rawEmbedding.length,
-            sample: rawEmbedding.slice(0, 3)
-          });
-
-          // Convert to array of numbers
-          const values = Array.from(rawEmbedding).map(val => {
-            const num = Number(val);
-            if (isNaN(num)) {
-              throw new Error(`Invalid vector value in chunk ${i}`);
-            }
-            return num;
-          });
-
-          // Validate dimensions for multilingual-e5-large
-          if (values.length !== 1024) {
-            console.error('Invalid vector structure:', {
-              index: i,
-              type: typeof values,
-              isArray: Array.isArray(values),
-              length: values.length,
-              sample: values.slice(0, 3)
-            });
-            throw new Error(`Invalid vector dimensions: expected 1024, got ${values.length}`);
-          }
-
-          // Log the vector details before storage
-          console.log(`Vector for chunk ${i}:`, {
-            type: typeof values,
-            isArray: Array.isArray(values),
-            length: values.length,
-            sample: values.slice(0, 3),
-            allNumbers: values.every(v => typeof v === 'number' && !isNaN(v)),
-            sampleJson: JSON.stringify(values.slice(0, 3))
-          });
-
-          return {
-            id: `source_${timestamp}_${name}_chunk${i}`,
-            values,
-            metadata: {
-              fileName: name,
-              content: result.chunk,
-              processedContent: result.chunk,
-              type: 'source',
-              uploadedAt: new Date().toISOString(),
-              chunkIndex: i,
-              totalChunks: embeddingResults.length,
-              chunkLength: result.chunk.length,
-              ...(blob && {
-                fileUrl: blob.url,
-                filePath: blob.pathname,
-                fileType: file.type || undefined,
-                hasBlob: true
-              }),
-              storageVersion: 'dual_storage_v1'
-            }
-          };
+        // Upload document using Pinecone Assistant
+        const result = await assistant.uploadDocument(text, {
+          fileName: name,
+          fileType: file.type || 'text/plain',
+          uploadedAt: new Date().toISOString(),
+          type: 'source',
+          ...(blob && {
+            fileUrl: blob.url,
+            filePath: blob.pathname,
+            hasBlob: true
+          })
         });
 
-        // Batch upload with validation
-        const BATCH_SIZE = 100;
-        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-          const batch = chunks.slice(i, i + BATCH_SIZE);
-          
-          // Validate each vector in the batch
-          batch.forEach((chunk, idx) => {
-            if (!Array.isArray(chunk.values) || 
-                chunk.values.length !== 1024 ||
-                !chunk.values.every(v => typeof v === 'number' && !isNaN(v))) {
-              console.error('Invalid vector structure:', {
-                index: idx,
-                type: typeof chunk.values,
-                isArray: Array.isArray(chunk.values),
-                length: chunk.values?.length,
-                sample: chunk.values.slice(0, 3)
-              });
-              throw new Error(`Invalid vector in batch at index ${idx}`);
-            }
-          });
-
-          try {
-            await sourceIndex.upsert(batch);
-            console.log(`[Pinecone] Successfully stored batch ${i/BATCH_SIZE + 1}, chunks ${i + 1} to ${Math.min(i + BATCH_SIZE, chunks.length)}/${chunks.length}`);
-          } catch (error) {
-            console.error('[Pinecone] Upsert error:', {
-              error,
-              batchSize: batch.length,
-              sampleVector: batch[0]?.values.slice(0, 3)
-            });
-            throw error;
-          }
-        }
+        console.log(`[Upload] Successfully processed ${name}:`, result);
 
         return { success: true, fileName: name };
       } catch (error) {
