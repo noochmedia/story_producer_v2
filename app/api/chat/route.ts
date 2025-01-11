@@ -82,12 +82,28 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   
   console.log('Generating embedding for context query:', query);
   const embeddingResults = await generateEmbedding(query);
+  
+  if (!embeddingResults || embeddingResults.length === 0) {
+    console.log('No valid embeddings generated for query');
+    controller.enqueue(new TextEncoder().encode("I couldn't process your query effectively. Could you try rephrasing it or being more specific?"));
+    return [];
+  }
+
   // Use the embedding from the first chunk for searching
   const queryEmbedding = embeddingResults[0].embedding;
-  
+  if (!queryEmbedding || !Array.isArray(queryEmbedding) || queryEmbedding.length !== 1536) {
+    console.error('Invalid embedding generated:', queryEmbedding);
+    throw new Error('Invalid embedding generated for query');
+  }
+
+  // Create a neutral vector if query is too short
+  const searchVector = query.length < 20 ? 
+    new Array(1536).fill(0) : // Use neutral vector for short queries
+    queryEmbedding;
+
   console.log('Querying Pinecone for relevant context...');
   const queryResponse = await index.query({
-    vector: queryEmbedding,
+    vector: searchVector,
     topK: 10,
     includeMetadata: true,
     filter: { type: { $eq: 'source' } }

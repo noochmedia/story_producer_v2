@@ -22,18 +22,38 @@ export async function processSourcesInChunks(
   openrouter: OpenRouterClient,
   controller: ReadableStreamDefaultController
 ) {
-  // Sort sources by relevance
-  const sortedSources = [...sources].sort((a, b) => (b.score || 0) - (a.score || 0));
-  
-  // Split sources into chunks
+  // Sort sources by relevance and filter out empty ones
+  const sortedSources = [...sources]
+    .sort((a, b) => (b.score || 0) - (a.score || 0))
+    .filter(source => {
+      let content = source.metadata?.content || '';
+      try {
+        const parsed = JSON.parse(content);
+        if (Array.isArray(parsed)) {
+          content = parsed
+            .map(line => line.content || '')
+            .filter(content => content.trim() && !content.includes('Inaudible'))
+            .join('\n');
+        }
+      } catch (e) {
+        // If not JSON, use content as-is
+      }
+      return content.trim().length > 0;
+    });
+
+  if (sortedSources.length === 0) {
+    console.log('No valid sources found after filtering');
+    return [];
+  }
+
+  // Split sources into chunks based on token count
   const chunks: PineconeMatch[][] = [];
   let currentChunk: PineconeMatch[] = [];
   let currentSize = 0;
+  const maxTokens = CHUNK_SIZE * 4; // Approximate chars per token
 
   for (const source of sortedSources) {
     let content = source.metadata?.content || '';
-    
-    // Try to parse JSON content and get actual text length
     try {
       const parsed = JSON.parse(content);
       if (Array.isArray(parsed)) {
@@ -47,14 +67,35 @@ export async function processSourcesInChunks(
     }
 
     const contentLength = content.length;
-    console.log(`Source ${source.metadata?.fileName}: content length ${contentLength}`);
+    console.log(`Processing source ${source.metadata?.fileName}: ${contentLength} chars`);
 
-    if (currentSize + contentLength > CHUNK_SIZE) {
+    // Start new chunk if current one would exceed size
+    if (currentSize + contentLength > maxTokens) {
       if (currentChunk.length > 0) {
         chunks.push(currentChunk);
         if (chunks.length >= MAX_CHUNKS) break;
         currentChunk = [];
         currentSize = 0;
+      }
+      // If single source is too large, split it
+      if (contentLength > maxTokens) {
+        console.log(`Source ${source.metadata?.fileName} exceeds max tokens, will be split`);
+        const parts = Math.ceil(contentLength / maxTokens);
+        for (let i = 0; i < parts && chunks.length < MAX_CHUNKS; i++) {
+          const start = i * maxTokens;
+          const end = Math.min(start + maxTokens, contentLength);
+          const partContent = content.slice(start, end);
+          chunks.push([{
+            ...source,
+            metadata: {
+              ...source.metadata,
+              content: partContent,
+              partIndex: i,
+              totalParts: parts
+            }
+          }]);
+        }
+        continue;
       }
     }
     currentChunk.push(source);
