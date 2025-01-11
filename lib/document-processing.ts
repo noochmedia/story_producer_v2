@@ -147,8 +147,8 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
           embedding.push(num);
         }
 
-        // Validate dimensions
-        if (embedding.length !== 1536) {
+        // Validate dimensions for multilingual-e5-large
+        if (embedding.length !== 1024) {
           throw new Error(`Invalid embedding array length: ${embedding.length}`);
         }
 
