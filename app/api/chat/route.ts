@@ -147,6 +147,21 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         vectorJSON: JSON.stringify(formattedVector.slice(0, 5))
       });
 
+      // Log the exact query parameters being sent to Pinecone
+      const queryParams = {
+        vector: formattedVector,
+        topK: 10,
+        includeMetadata: true,
+        filter: { type: { $eq: 'source' } }
+      };
+      console.log('Pinecone query parameters:', {
+        vectorType: typeof queryParams.vector,
+        vectorIsArray: Array.isArray(queryParams.vector),
+        vectorLength: queryParams.vector.length,
+        vectorSample: queryParams.vector.slice(0, 5),
+        fullQuery: JSON.stringify(queryParams)
+      });
+
       queryResponse = await index.query({
         vector: formattedVector,
         topK: 10,
