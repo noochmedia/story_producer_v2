@@ -9,12 +9,30 @@ export async function GET() {
 
     const index = pinecone.index(process.env.PINECONE_INDEX || 'story-tools-embedding2-sj0uqym')
 
-    const queryResponse = await index.query({
-      vector: Array(1536).fill(0),  // Dummy vector for 1536 dimensions
+    // Create a test vector with proper validation
+    const testVector = Array(1536).fill(0).map(Number);
+    
+    // Log the test vector details
+    console.log('Test vector details:', {
+      type: typeof testVector,
+      isArray: Array.isArray(testVector),
+      length: testVector.length,
+      sample: testVector.slice(0, 3),
+      allNumbers: testVector.every(v => typeof v === 'number' && !isNaN(v)),
+      serializedSample: JSON.stringify(testVector.slice(0, 3))
+    });
+
+    // Create the query payload
+    const queryPayload = {
+      vector: testVector,
       topK: 5,
       includeMetadata: true,
       filter: { type: { $eq: 'source' } }
-    })
+    };
+
+    console.log('Query payload:', JSON.stringify(queryPayload, null, 2));
+
+    const queryResponse = await index.query(queryPayload);
 
     return NextResponse.json({
       success: true,
