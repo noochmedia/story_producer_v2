@@ -22,9 +22,24 @@ export async function processSourcesInChunks(
   openrouter: OpenRouterClient,
   controller: ReadableStreamDefaultController
 ) {
-  // Sort sources by relevance and filter out empty ones
+  // Check if this is an overview query
+  const isOverviewQuery = query.toLowerCase().includes('summary') || 
+                         query.toLowerCase().includes('overview') ||
+                         query.toLowerCase().includes('all') ||
+                         query.toLowerCase().includes('everything');
+
+  // Sort sources by relevance (or by timestamp for overview queries)
   const sortedSources = [...sources]
-    .sort((a, b) => (b.score || 0) - (a.score || 0))
+    .sort((a, b) => {
+      if (isOverviewQuery) {
+        // For overview queries, try to sort by timestamp if available
+        const aTime = a.metadata?.timestamp || '';
+        const bTime = b.metadata?.timestamp || '';
+        return aTime.localeCompare(bTime);
+      }
+      // Otherwise sort by relevance score
+      return (b.score || 0) - (a.score || 0);
+    })
     .filter(source => {
       let content = source.metadata?.content || '';
       try {
@@ -41,10 +56,17 @@ export async function processSourcesInChunks(
       return content.trim().length > 0;
     });
 
+  console.log(`Processing ${sortedSources.length} sources in ${isOverviewQuery ? 'overview' : 'specific'} mode`);
+
   if (sortedSources.length === 0) {
     console.log('No valid sources found after filtering');
+    controller.enqueue(new TextEncoder().encode("I couldn't find any valid sources to analyze. Please try a different query."));
     return [];
   }
+
+  // For overview queries, we want to process more sources
+  const maxChunks = isOverviewQuery ? MAX_CHUNKS * 2 : MAX_CHUNKS;
+  console.log(`Using max chunks: ${maxChunks}`);
 
   // Split sources into chunks based on token count
   const chunks: PineconeMatch[][] = [];
