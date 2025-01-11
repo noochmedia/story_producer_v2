@@ -67,7 +67,7 @@ function processMatch(match: PineconeMatch): PineconeMatch {
   };
 }
 
-async function queryPineconeForContext(query: string, stage: string, controller: ReadableStreamDefaultController) {
+async function queryPineconeForContext(query: string, stage: string, controller: ReadableStreamDefaultController): Promise<PineconeMatch[]> {
   if (!process.env.PINECONE_API_KEY || !process.env.PINECONE_INDEX) {
     throw new Error('Pinecone configuration missing');
   }
@@ -90,32 +90,32 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   try {
     if (isOverviewQuery) {
       console.log('Using metadata-only query for overview');
-      // For overview queries, just get all sources
-      // For overview queries, use a zero vector with filtering
-      const zeroVector = Array.from({ length: 1536 }, () => 0);
-      console.log('Using zero vector for overview query:', {
-        length: zeroVector.length,
-        sample: zeroVector.slice(0, 3),
-        isValid: zeroVector.every(v => v === 0)
-      });
-      
-      // Ensure the query matches Pinecone's expected format
       // Create a pure array of numbers for the vector
-      const queryVector = new Float32Array(1536).fill(0);
+      const queryVector = Array(1536).fill(0).map(Number);
       
-      // Log the exact vector being sent
-      console.log('Query vector details:', {
-        type: 'Float32Array',
-        length: queryVector.length,
-        sample: Array.from(queryVector.slice(0, 3))
-      });
+      // Validate vector format
+      if (!Array.isArray(queryVector) || queryVector.some(val => typeof val !== "number" || isNaN(val))) {
+        throw new Error("Query vector is not a valid numerical array");
+      }
 
-      queryResponse = await index.query({
-        vector: Array.from(queryVector),
+      // Log the complete payload for debugging
+      const queryPayload = {
+        vector: queryVector,
         topK: 100,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
+      };
+
+      console.log('Pinecone query payload:', JSON.stringify(queryPayload, null, 2));
+      console.log('Vector validation:', {
+        isArray: Array.isArray(queryVector),
+        length: queryVector.length,
+        sample: queryVector.slice(0, 3),
+        allNumbers: queryVector.every(v => typeof v === 'number' && !isNaN(v)),
+        serializedSample: JSON.stringify(queryVector.slice(0, 3))
       });
+
+      queryResponse = await index.query(queryPayload);
     } else {
       console.log('Generating embedding for specific query:', query);
       const embeddingResults = await generateEmbedding(query);
@@ -123,7 +123,7 @@ async function queryPineconeForContext(query: string, stage: string, controller:
       if (!embeddingResults || embeddingResults.length === 0) {
         console.error('No valid embeddings generated');
         controller.enqueue(new TextEncoder().encode("I couldn't process your query effectively. Could you try rephrasing it?"));
-        return [] as PineconeMatch[];
+        return [];
       }
 
       // Extract embedding and ensure it's a plain array of numbers
@@ -143,34 +143,32 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         throw new Error(`Invalid vector dimensions: expected 1536, got ${vector.length}`);
       }
 
-      // Log the exact vector we're sending to Pinecone
-      console.log('Vector for Pinecone query:', {
-        type: typeof vector,
-        isArray: Array.isArray(vector),
-        length: vector.length,
-        sample: vector.slice(0, 3),
-        allNumbers: vector.every(v => typeof v === 'number' && !isNaN(v)),
-        // Log the actual structure
-        stringified: JSON.stringify(vector.slice(0, 3))
-      });
-
-      // Query Pinecone with validated vector
-      // Convert embedding to Float32Array for consistent numeric format
-      const queryVector = new Float32Array(vector);
+      // Ensure vector is a pure array of numbers
+      const queryVector = Array.from(vector, Number);
       
-      // Log the exact vector being sent
-      console.log('Query vector details:', {
-        type: 'Float32Array',
-        length: queryVector.length,
-        sample: Array.from(queryVector.slice(0, 3))
-      });
+      // Validate vector format
+      if (!Array.isArray(queryVector) || queryVector.some(val => typeof val !== "number" || isNaN(val))) {
+        throw new Error("Query vector is not a valid numerical array");
+      }
 
-      queryResponse = await index.query({
-        vector: Array.from(queryVector),
+      // Log the complete payload for debugging
+      const queryPayload = {
+        vector: queryVector,
         topK: 10,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
+      };
+
+      console.log('Pinecone query payload:', JSON.stringify(queryPayload, null, 2));
+      console.log('Vector validation:', {
+        isArray: Array.isArray(queryVector),
+        length: queryVector.length,
+        sample: queryVector.slice(0, 3),
+        allNumbers: queryVector.every(v => typeof v === 'number' && !isNaN(v)),
+        serializedSample: JSON.stringify(queryVector.slice(0, 3))
       });
+
+      queryResponse = await index.query(queryPayload);
     }
   } catch (error) {
     // Enhanced error logging
@@ -234,7 +232,7 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   // Send a message if no matches found
   if (validMatches.length === 0) {
     controller.enqueue(new TextEncoder().encode("I couldn't find any relevant information in the sources about that topic. Would you like to try a different question?"));
-    return [] as PineconeMatch[];
+    return [];
   }
 
   return validMatches;
