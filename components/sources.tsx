@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react'
 import { Button } from "./ui/button"
 import { useToast } from "./ui/use-toast"
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "./ui/dialog"
+import { ScrollArea } from "./ui/scroll-area"
 import { Loader2, Eye, X } from 'lucide-react'
 
 interface Source {
@@ -20,17 +22,39 @@ export function Sources() {
   const [sources, setSources] = useState<Source[]>([])
   const [showSources, setShowSources] = useState(true)
   const [isDeleting, setIsDeleting] = useState<string | null>(null)
+  const [viewingSource, setViewingSource] = useState<Source | null>(null)
+  const [isLoadingContent, setIsLoadingContent] = useState(false)
+  const [sourceContent, setSourceContent] = useState<string>('')
   const { toast } = useToast()
 
-  const handleView = (source: Source) => {
-    if (source.url) {
-      window.open(source.url, '_blank')
-    } else {
+  const handleView = async (source: Source) => {
+    if (!source.url) {
       toast({
         title: "Error",
         description: "Source URL not available",
         variant: "destructive",
       })
+      return
+    }
+
+    try {
+      setViewingSource(source)
+      setIsLoadingContent(true)
+      const response = await fetch(`/api/sources/view?url=${encodeURIComponent(source.url)}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch source content')
+      }
+      const data = await response.json()
+      setSourceContent(data.content)
+    } catch (error) {
+      console.error('Error viewing source:', error)
+      toast({
+        title: "Error",
+        description: "Failed to load source content. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoadingContent(false)
     }
   }
 
@@ -193,6 +217,32 @@ export function Sources() {
           )}
         </div>
       )}
+
+      {/* Source content dialog */}
+      <Dialog open={viewingSource !== null} onOpenChange={(open) => {
+        if (!open) {
+          setViewingSource(null)
+          setSourceContent('')
+        }
+      }}>
+        <DialogContent className="max-w-4xl h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>{viewingSource?.name}</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="flex-1 p-4 rounded border">
+            {isLoadingContent ? (
+              <div className="flex items-center justify-center p-4">
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                <p>Loading content...</p>
+              </div>
+            ) : (
+              <pre className="whitespace-pre-wrap font-mono text-sm">
+                {sourceContent}
+              </pre>
+            )}
+          </ScrollArea>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

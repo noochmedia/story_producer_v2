@@ -19,59 +19,57 @@ const OVERLAP_SIZE = 200; // Characters to overlap between chunks for context
  * Using a more sophisticated approach with overlap and proper boundaries.
  */
 function splitIntoChunks(text: string): string[] {
-  // Clean and normalize the text
+  // Clean and normalize the text while preserving important line breaks
   const cleanText = text
-    .replace(/\s+/g, ' ')
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(/\r\n/g, '\n') // Normalize line endings
+    .replace(/\n{3,}/g, '\n\n') // Reduce multiple blank lines to double
+    .replace(/\s+/g, ' ') // Normalize spaces
     .trim();
 
-  if (cleanText.length <= MIN_CHUNK_LENGTH) {
+  // If text is too short, return as single chunk if it meets minimum length
+  if (cleanText.length < MIN_CHUNK_LENGTH) {
+    console.log(`[CHUNK] Text too short (${cleanText.length} chars), minimum required: ${MIN_CHUNK_LENGTH}`);
+    return [];
+  }
+
+  if (cleanText.length <= MAX_CHUNK_TOKENS * 4) {
     return [cleanText];
   }
 
+  console.log(`[CHUNK] Processing text of length ${cleanText.length} chars`);
+  
+  // Split into initial segments by double newlines (paragraphs)
+  const segments = cleanText.split(/\n\s*\n/).filter(s => s.trim());
+  console.log(`[CHUNK] Split into ${segments.length} initial segments`);
+
   const chunks: string[] = [];
-  const avgCharsPerToken = 4;
-  const maxChunkLength = MAX_CHUNK_TOKENS * avgCharsPerToken;
-  
-  let startIndex = 0;
-  
-  while (startIndex < cleanText.length) {
-    // Calculate the potential end of this chunk
-    let endIndex = startIndex + maxChunkLength;
-    
-    // If we're at the end of the text
-    if (endIndex >= cleanText.length) {
-      chunks.push(cleanText.slice(startIndex));
-      break;
-    }
-    
-    // Find the last sentence boundary within our limit
-    let boundaryIndex = endIndex;
-    while (boundaryIndex > startIndex + MIN_CHUNK_LENGTH) {
-      const char = cleanText[boundaryIndex];
-      if ('.!?'.includes(char) && cleanText[boundaryIndex + 1] === ' ') {
-        break;
+  let currentChunk = '';
+  const maxChunkLength = MAX_CHUNK_TOKENS * 4; // Approximate chars per token
+
+  for (const segment of segments) {
+    // If adding this segment would exceed max length, save current chunk and start new
+    if (currentChunk && (currentChunk.length + segment.length + 2) > maxChunkLength) {
+      if (currentChunk.length >= MIN_CHUNK_LENGTH) {
+        chunks.push(currentChunk.trim());
+        console.log(`[CHUNK] Added chunk of length ${currentChunk.length}`);
       }
-      boundaryIndex--;
+      currentChunk = segment;
+    } else {
+      // Add segment to current chunk
+      currentChunk = currentChunk
+        ? currentChunk + '\n\n' + segment
+        : segment;
     }
-    
-    // If no good boundary found, fall back to last space
-    if (boundaryIndex <= startIndex + MIN_CHUNK_LENGTH) {
-      boundaryIndex = cleanText.lastIndexOf(' ', endIndex);
-    }
-    
-    // Extract the chunk
-    const chunk = cleanText.slice(startIndex, boundaryIndex + 1).trim();
-    if (chunk.length >= MIN_CHUNK_LENGTH) {
-      chunks.push(chunk);
-    }
-    
-    // Move the start index back by the overlap amount
-    startIndex = boundaryIndex - OVERLAP_SIZE;
-    if (startIndex < 0) startIndex = 0;
   }
-  
-  return chunks.filter(chunk => chunk.length >= MIN_CHUNK_LENGTH);
+
+  // Add final chunk if it meets minimum length
+  if (currentChunk && currentChunk.length >= MIN_CHUNK_LENGTH) {
+    chunks.push(currentChunk.trim());
+    console.log(`[CHUNK] Added final chunk of length ${currentChunk.length}`);
+  }
+
+  console.log(`[CHUNK] Created ${chunks.length} chunks`);
+  return chunks;
 }
 
 /**
