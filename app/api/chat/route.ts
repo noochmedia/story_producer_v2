@@ -108,6 +108,7 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   });
   
   const index = pinecone.index(process.env.PINECONE_INDEX);
+  const sourceIndex = index.namespace('sources');
   
   // For overview/summary queries, use a different approach
   const isOverviewQuery = query.toLowerCase().includes('summary') || 
@@ -131,7 +132,7 @@ async function queryPineconeForContext(query: string, stage: string, controller:
       });
 
       // Query the index with minimal options
-      queryResponse = await index.query({
+      queryResponse = await sourceIndex.query({
         vector,
         topK: 100,
         includeMetadata: true
@@ -151,7 +152,7 @@ async function queryPineconeForContext(query: string, stage: string, controller:
       });
 
       // Query the index with minimal options
-      queryResponse = await index.query({
+      queryResponse = await sourceIndex.query({
         vector,
         topK: 10,
         includeMetadata: true

@@ -129,7 +129,9 @@ export async function POST(request: NextRequest) {
       apiKey: process.env.PINECONE_API_KEY!
     });
 
+    // Get index and create namespace for sources
     const index = pinecone.index(process.env.PINECONE_INDEX);
+    const sourceIndex = index.namespace('sources');
 
     // Process each file
     const results: UploadResult[] = await Promise.all(files.map(async (file: File) => {
@@ -230,7 +232,7 @@ export async function POST(request: NextRequest) {
           });
 
           try {
-            await index.upsert(batch);
+            await sourceIndex.upsert(batch);
             console.log(`[Pinecone] Successfully stored batch ${i/BATCH_SIZE + 1}, chunks ${i + 1} to ${Math.min(i + BATCH_SIZE, chunks.length)}/${chunks.length}`);
           } catch (error) {
             console.error('[Pinecone] Upsert error:', {

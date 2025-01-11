@@ -24,14 +24,14 @@ export async function GET(request: NextRequest) {
     });
 
     const index = pinecone.index(process.env.PINECONE_INDEX);
+    const projectIndex = index.namespace('project_details');
 
     // Use a neutral vector to get all project details
     const neutralVector = Array.from({ length: 1024 }, () => 0);
-    const queryResponse = await index.query({
+    const queryResponse = await projectIndex.query({
       vector: neutralVector,
       topK: 100, // High number to get all chunks
-      includeMetadata: true,
-      filter: { type: { $eq: 'project_details' } }
+      includeMetadata: true
     });
 
     if (queryResponse.matches?.length > 0) {
@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
     });
 
     const index = pinecone.index(process.env.PINECONE_INDEX);
+    const projectIndex = index.namespace('project_details');
 
     // Generate embeddings for the project details
     const embeddingResults = await generateEmbedding(details);
@@ -102,7 +103,7 @@ export async function POST(request: NextRequest) {
         throw new Error('Invalid vector values');
       }
 
-      await index.upsert([{
+      await projectIndex.upsert([{
         id: `project_details_chunk${i}`,
         values: validVector,
         metadata: {
