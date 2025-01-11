@@ -21,7 +21,7 @@ const OVERLAP_SIZE = 200;
  * @returns Array of embeddings
  */
 async function generatePineconeEmbeddings(inputs: string[]): Promise<number[][]> {
-  const response = await fetch('https://api.pinecone.io/inference/embed', {
+  const response = await fetch(`https://controller.${process.env.PINECONE_ENVIRONMENT!}.pinecone.io/actions/generate-embeddings`, {
     method: 'POST',
     headers: {
       'Api-Key': process.env.PINECONE_API_KEY!,

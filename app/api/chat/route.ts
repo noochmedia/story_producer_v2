@@ -26,7 +26,7 @@ type PineconeMatch = ScoredPineconeRecord<SourceMetadata>;
  * @returns Array of embeddings
  */
 async function generateQueryEmbedding(input: string): Promise<number[]> {
-  const response = await fetch('https://api.pinecone.io/inference/embed', {
+  const response = await fetch(`https://controller.${process.env.PINECONE_ENVIRONMENT!}.pinecone.io/actions/generate-embeddings`, {
     method: 'POST',
     headers: {
       'Api-Key': process.env.PINECONE_API_KEY!,
