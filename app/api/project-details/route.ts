@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
     const index = pinecone.index(process.env.PINECONE_INDEX);
 
     // Use a neutral vector to get all project details
-    const neutralVector = Array.from({ length: 1536 }, () => 0);
+    const neutralVector = Array.from({ length: 1024 }, () => 0);
     const queryResponse = await index.query({
       vector: neutralVector,
       topK: 100, // High number to get all chunks

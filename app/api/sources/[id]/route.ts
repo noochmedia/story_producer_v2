@@ -31,7 +31,7 @@ export async function DELETE(request: NextRequest, { params }: { params: { id: s
 
         // Delete all chunks for this file from Pinecone
         const queryResponse = await index.query({
-            vector: Array(1536).fill(0), // Neutral vector
+            vector: Array(1024).fill(0), // Neutral vector for multilingual-e5-large
             topK: 10000,
             includeMetadata: true,
             filter: { 
