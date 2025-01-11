@@ -11,7 +11,7 @@ const openai = new OpenAI({
 
 // Maximum tokens for text-embedding-ada-002 (reduced for safety)
 const MAX_CHUNK_TOKENS = 4000;
-const MIN_CHUNK_LENGTH = 100; // Minimum characters per chunk
+const MIN_CHUNK_LENGTH = 20; // Minimum characters per chunk (reduced for better handling)
 const OVERLAP_SIZE = 200; // Characters to overlap between chunks for context
 
 /**
@@ -93,14 +93,22 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
       throw new Error('No valid chunks generated from text');
     }
 
-    // Generate embeddings for each chunk
-    const results = await Promise.all(chunks.map(async (chunk, index) => {
-      console.log(`Generating embedding for chunk ${index + 1}/${chunks.length} (${chunk.length} chars)`);
-      
-      // Validate chunk
+    // Filter out chunks that are too short
+    const validChunks = chunks.filter((chunk, index) => {
       if (chunk.length < MIN_CHUNK_LENGTH) {
-        throw new Error(`Chunk ${index + 1} is too short (${chunk.length} chars)`);
+        console.log(`Skipping chunk ${index + 1} (${chunk.length} chars) - too short`);
+        return false;
       }
+      return true;
+    });
+
+    if (validChunks.length === 0) {
+      throw new Error('No valid chunks remaining after filtering');
+    }
+
+    // Generate embeddings for valid chunks
+    const results = await Promise.all(validChunks.map(async (chunk, index) => {
+      console.log(`Generating embedding for chunk ${index + 1}/${validChunks.length} (${chunk.length} chars)`);
       
       const response = await openai.embeddings.create({
         model: "text-embedding-ada-002",
@@ -130,7 +138,7 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
       };
     }));
 
-    return results;
+    return results.filter(Boolean); // Remove any undefined results
   } catch (error) {
     console.error("Error generating embeddings:", error);
     throw error;

@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react'
 import { Button } from "./ui/button"
 import { useToast } from "./ui/use-toast"
-import { Loader2 } from 'lucide-react'
+import { Loader2, Eye, X } from 'lucide-react'
 
 interface Source {
   id: string;
@@ -19,7 +19,50 @@ export function Sources() {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [sources, setSources] = useState<Source[]>([])
   const [showSources, setShowSources] = useState(true)
+  const [isDeleting, setIsDeleting] = useState<string | null>(null)
   const { toast } = useToast()
+
+  const handleView = (source: Source) => {
+    if (source.url) {
+      window.open(source.url, '_blank')
+    } else {
+      toast({
+        title: "Error",
+        description: "Source URL not available",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const handleDelete = async (id: string) => {
+    try {
+      setIsDeleting(id)
+      const response = await fetch(`/api/sources/${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      })
+      
+      if (!response.ok) {
+        throw new Error('Failed to delete source')
+      }
+
+      toast({
+        title: "Success",
+        description: "Source deleted successfully",
+      })
+      
+      // Refresh the sources list
+      fetchSources()
+    } catch (error) {
+      console.error('Error deleting source:', error)
+      toast({
+        title: "Error",
+        description: "Failed to delete source. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsDeleting(null)
+    }
+  }
 
   const fetchSources = async () => {
     try {
@@ -112,20 +155,33 @@ export function Sources() {
           ) : sources.length > 0 ? (
             <div className="space-y-2">
               {sources.map((source) => (
-                <div key={source.id} className="p-3 border rounded-lg space-y-1">
-                  <div className="flex justify-between items-start">
+                <div key={source.id} className="p-3 border rounded-lg">
+                  <div className="flex justify-between items-center">
                     <h3 className="font-medium">{source.name}</h3>
-                    {source.uploadedAt && (
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(source.uploadedAt).toLocaleString()}
-                      </span>
-                    )}
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleView(source)}
+                        title="View source"
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDelete(source.id)}
+                        disabled={isDeleting === source.id}
+                        title="Delete source"
+                      >
+                        {isDeleting === source.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <X className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
                   </div>
-                  {source.type && (
-                    <p className="text-sm text-muted-foreground">
-                      Type: {source.type}
-                    </p>
-                  )}
                 </div>
               ))}
             </div>
