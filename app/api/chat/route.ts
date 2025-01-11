@@ -94,6 +94,14 @@ async function queryPineconeForContext(query: string, stage: string, controller:
       // Create a properly formatted zero vector for overview queries
       const zeroVector = Array.from({ length: 1536 }, () => 0.0);
       
+      console.log('Overview query vector:', {
+        type: typeof zeroVector,
+        isArray: Array.isArray(zeroVector),
+        length: zeroVector.length,
+        sample: zeroVector.slice(0, 5),
+        allNumbers: zeroVector.every(v => typeof v === 'number')
+      });
+
       queryResponse = await index.query({
         vector: zeroVector,
         topK: 100,
@@ -125,9 +133,20 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         return num;
       });
 
-      console.log('Querying Pinecone with validated vector length:', formattedVector.length);
-      console.log('First few values:', formattedVector.slice(0, 3));
-      
+      // Detailed vector logging
+      console.log('Query vector details:', {
+        originalType: typeof queryEmbedding,
+        originalIsArray: Array.isArray(queryEmbedding),
+        originalLength: queryEmbedding.length,
+        formattedType: typeof formattedVector,
+        formattedIsArray: Array.isArray(formattedVector),
+        formattedLength: formattedVector.length,
+        sample: formattedVector.slice(0, 5),
+        allNumbers: formattedVector.every(v => typeof v === 'number'),
+        containsNaN: formattedVector.some(v => isNaN(v)),
+        vectorJSON: JSON.stringify(formattedVector.slice(0, 5))
+      });
+
       queryResponse = await index.query({
         vector: formattedVector,
         topK: 10,
@@ -136,11 +155,31 @@ async function queryPineconeForContext(query: string, stage: string, controller:
       });
     }
   } catch (error) {
-    console.error('Error in vector search:', error);
+    // Enhanced error logging
+    console.error('Error in vector search:', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      errorType: error instanceof Error ? error.constructor.name : typeof error,
+      errorStack: error instanceof Error ? error.stack : 'No stack trace',
+      query: {
+        type: isOverviewQuery ? 'overview' : 'specific',
+        stage: 'vector_search'
+      }
+    });
     throw error;
   }
 
-  console.log('Found matches:', queryResponse.matches.length);
+  // Log query response details
+  console.log('Query response details:', {
+    matchCount: queryResponse.matches.length,
+    hasMatches: queryResponse.matches.length > 0,
+    firstMatchSample: queryResponse.matches[0] ? {
+      id: queryResponse.matches[0].id,
+      score: queryResponse.matches[0].score,
+      hasMetadata: !!queryResponse.matches[0].metadata,
+      metadataKeys: queryResponse.matches[0].metadata ? Object.keys(queryResponse.matches[0].metadata) : [],
+      contentType: queryResponse.matches[0].metadata?.content ? typeof queryResponse.matches[0].metadata.content : 'no content'
+    } : 'no matches'
+  });
   
   // Process and clean matches with dual storage support
   const validMatches = queryResponse.matches
