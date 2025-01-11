@@ -80,34 +80,46 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   
   const index = pinecone.index(process.env.PINECONE_INDEX);
   
-  console.log('Generating embedding for context query:', query);
-  const embeddingResults = await generateEmbedding(query);
-  
-  if (!embeddingResults || embeddingResults.length === 0) {
-    console.log('No valid embeddings generated for query');
-    controller.enqueue(new TextEncoder().encode("I couldn't process your query effectively. Could you try rephrasing it or being more specific?"));
-    return [];
+  // For overview/summary queries, use a different approach
+  const isOverviewQuery = query.toLowerCase().includes('summary') || 
+                         query.toLowerCase().includes('overview') ||
+                         query.toLowerCase().includes('all') ||
+                         query.toLowerCase().includes('everything');
+
+  let queryResponse;
+  if (isOverviewQuery) {
+    console.log('Using metadata-only query for overview');
+    // For overview queries, just get all sources without vector search
+    queryResponse = await index.query({
+      vector: Array(1536).fill(0), // Neutral vector
+      topK: 100,
+      includeMetadata: true,
+      filter: { type: { $eq: 'source' } }
+    });
+  } else {
+    console.log('Generating embedding for specific query:', query);
+    const embeddingResults = await generateEmbedding(query);
+    
+    if (!embeddingResults || embeddingResults.length === 0) {
+      console.log('No valid embeddings generated for query');
+      controller.enqueue(new TextEncoder().encode("I couldn't process your query effectively. Could you try rephrasing it or being more specific?"));
+      return [];
+    }
+
+    const queryEmbedding = embeddingResults[0].embedding;
+    if (!queryEmbedding || !Array.isArray(queryEmbedding) || queryEmbedding.length !== 1536) {
+      console.error('Invalid embedding generated:', queryEmbedding);
+      throw new Error('Invalid embedding generated for query');
+    }
+
+    console.log('Querying Pinecone with specific vector');
+    queryResponse = await index.query({
+      vector: queryEmbedding,
+      topK: 10,
+      includeMetadata: true,
+      filter: { type: { $eq: 'source' } }
+    });
   }
-
-  // Use the embedding from the first chunk for searching
-  const queryEmbedding = embeddingResults[0].embedding;
-  if (!queryEmbedding || !Array.isArray(queryEmbedding) || queryEmbedding.length !== 1536) {
-    console.error('Invalid embedding generated:', queryEmbedding);
-    throw new Error('Invalid embedding generated for query');
-  }
-
-  // Create a neutral vector if query is too short
-  const searchVector = query.length < 20 ? 
-    new Array(1536).fill(0) : // Use neutral vector for short queries
-    queryEmbedding;
-
-  console.log('Querying Pinecone for relevant context...');
-  const queryResponse = await index.query({
-    vector: searchVector,
-    topK: 10,
-    includeMetadata: true,
-    filter: { type: { $eq: 'source' } }
-  });
 
   console.log('Found matches:', queryResponse.matches.length);
   
@@ -156,13 +168,21 @@ export async function POST(req: Request) {
     type: isSoundbiteRequest ? 'Soundbite' : 'Regular',
     messageCount: messages.length,
     lastMessage: messages[messages.length - 1]?.content,
-    hasProjectDetails: !!projectDetails
+    hasProjectDetails: !!projectDetails,
+    deepDive // Log the actual deepDive value
   });
   
   try {
     // Get user's latest message
     const userMessage = messages[messages.length - 1];
     console.log('User query:', userMessage.content);
+
+    // Validate deepDive mode
+    if (!deepDive) {
+      console.log('Sources not enabled, running in normal mode');
+    } else {
+      console.log('Sources enabled, running in deep dive mode');
+    }
 
     // Initialize clients
     const openai = new OpenAI({
@@ -184,7 +204,11 @@ export async function POST(req: Request) {
               // Start with base system message including project details
               systemMessage = getBaseSystemMessage(projectDetails);
 
+              // Log the mode we're running in
+              console.log('Running in mode:', deepDive ? 'Deep Dive' : 'Normal');
+
               if (deepDive) {
+                console.log('Entering deep dive mode with sources');
                 // Only check memory and query sources in deep dive mode
                 const relevantMemories = await queryMemory(userMessage.content);
                 const memoryContext = formatMemoryForAI(relevantMemories);
@@ -271,8 +295,9 @@ export async function POST(req: Request) {
                   }
                 }
               } else {
+                console.log('Running in normal mode without sources');
                 // In normal mode, just respond without querying sources
-                systemMessage += `\nNote that I'm not currently using the interview transcripts. If you'd like me to check the transcripts, please enable the "Use sources" option.`;
+                systemMessage += `\nNote that I'm not currently using the interview transcripts. If you'd like me to check the transcripts, please enable the "Use sources" option by checking the box below the input field.`;
                 
                 const response = await openai.chat.completions.create({
                   model: AI_CONFIG.model,
