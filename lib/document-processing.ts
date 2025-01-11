@@ -141,15 +141,22 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
         throw new Error(`Failed to generate embedding for chunk ${index + 1}`);
       }
 
-      // Use embedding directly without modification
-      const embedding = response.data[0].embedding;
+      // Convert embedding to array of numbers
+      const rawEmbedding = response.data[0].embedding;
+      const embedding = Array.from(rawEmbedding).map(val => {
+        const num = Number(val);
+        if (isNaN(num)) {
+          throw new Error(`Invalid embedding value in chunk ${index + 1}`);
+        }
+        return num;
+      });
       
-      // Just validate dimensions
+      // Validate dimensions
       if (embedding.length !== 1536) {
         throw new Error(`Invalid embedding dimensions for chunk ${index + 1}: ${embedding.length}`);
       }
 
-      console.log(`Successfully generated embedding for chunk ${index + 1}`);
+      console.log(`Successfully generated embedding for chunk ${index + 1}, first few values:`, embedding.slice(0, 3));
       return {
         chunk,
         embedding
