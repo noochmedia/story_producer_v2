@@ -113,44 +113,26 @@ async function queryPineconeForContext(query: string, stage: string, controller:
       const embeddingResults = await generateEmbedding(query);
       
       if (!embeddingResults || embeddingResults.length === 0) {
-        console.log('No valid embeddings generated for query');
-        controller.enqueue(new TextEncoder().encode("I couldn't process your query effectively. Could you try rephrasing it or being more specific?"));
+        console.error('No valid embeddings generated');
+        controller.enqueue(new TextEncoder().encode("I couldn't process your query effectively. Could you try rephrasing it?"));
         return [];
       }
 
-      // Get the embedding and ensure it's a flat array of numbers
-      const queryEmbedding = Array.isArray(embeddingResults[0].embedding) 
-        ? embeddingResults[0].embedding.map(Number)
-        : [];
+      // Extract and validate vector
+      const vector = embeddingResults[0].embedding;
 
-      // Validate the embedding
-      if (!Array.isArray(queryEmbedding) || queryEmbedding.length !== 1536) {
-        console.error('Invalid embedding structure:', {
-          isArray: Array.isArray(queryEmbedding),
-          length: queryEmbedding.length,
-          sampleValues: queryEmbedding.slice(0, 3)
-        });
-        throw new Error(`Invalid embedding dimensions: expected 1536, got ${queryEmbedding.length}`);
-      }
-
-      // Ensure all values are numbers
-      const vectorArray = queryEmbedding.map(val => {
-        const num = Number(val);
-        if (isNaN(num)) throw new Error('Invalid vector value detected');
-        return num;
+      // Log vector before query
+      console.log('Vector before Pinecone query:', {
+        type: typeof vector,
+        isArray: Array.isArray(vector),
+        length: vector.length,
+        sample: vector.slice(0, 3),
+        allNumbers: vector.every(v => typeof v === 'number' && !isNaN(v))
       });
 
-      // Log the final vector format
-      console.log('Final vector format:', {
-        type: typeof vectorArray,
-        isArray: Array.isArray(vectorArray),
-        length: vectorArray.length,
-        sample: vectorArray.slice(0, 3)
-      });
-
-      // Query Pinecone with the validated vector
+      // Query Pinecone
       queryResponse = await index.query({
-        vector: vectorArray,  // Use the validated vector array
+        vector,
         topK: 10,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }

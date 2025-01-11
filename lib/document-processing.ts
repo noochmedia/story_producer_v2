@@ -106,7 +106,6 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
   }
 
   try {
-    // Split text into chunks
     const chunks = splitIntoChunks(text);
     console.log(`Split text into ${chunks.length} chunks`);
 
@@ -114,7 +113,6 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
       throw new Error('No valid chunks generated from text');
     }
 
-    // Filter out chunks that are too short
     const validChunks = chunks.filter((chunk, index) => {
       if (chunk.length < MIN_CHUNK_LENGTH) {
         console.log(`Skipping chunk ${index + 1} (${chunk.length} chars) - too short`);
@@ -127,7 +125,6 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
       throw new Error('No valid chunks remaining after filtering');
     }
 
-    // Generate embeddings for valid chunks
     const results = await Promise.all(validChunks.map(async (chunk, index) => {
       console.log(`Generating embedding for chunk ${index + 1}/${validChunks.length} (${chunk.length} chars)`);
       
@@ -137,61 +134,22 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
           input: chunk,
         });
 
-        // Log raw response to debug
-        console.log('OpenAI embedding response:', {
-          hasData: !!response.data,
-          dataLength: response.data?.length,
-          firstItem: response.data?.[0] ? {
-            hasEmbedding: !!response.data[0].embedding,
-            embeddingType: typeof response.data[0].embedding,
-            isArray: Array.isArray(response.data[0].embedding),
-            constructor: response.data[0].embedding?.constructor?.name,
-            sample: Array.isArray(response.data[0].embedding) 
-              ? response.data[0].embedding.slice(0, 3) 
-              : 'not an array'
-          } : 'no first item'
-        });
-
-        if (!response.data?.[0]?.embedding) {
-          throw new Error(`Failed to generate embedding for chunk ${index + 1}`);
-        }
-
-        // Get the full embedding array and ensure it's properly formatted
+        // Extract the embedding array
         const rawEmbedding = response.data[0].embedding;
-        
-        // Log raw embedding before conversion
-        console.log('Raw embedding before conversion:', {
-          type: typeof rawEmbedding,
-          isArray: Array.isArray(rawEmbedding),
-          constructor: rawEmbedding?.constructor?.name,
-          sample: Array.isArray(rawEmbedding) 
-            ? rawEmbedding.slice(0, 3) 
-            : 'not an array'
-        });
 
-        // Convert to array and validate
-        const embedding = Array.isArray(rawEmbedding) 
-          ? rawEmbedding.map(val => {
-              const num = Number(val);
-              if (isNaN(num)) {
-                throw new Error(`Invalid embedding value in chunk ${index + 1}`);
-              }
-              return num;
-            })
-          : [];
+        // Ensure it's a flat array of numbers
+        const embedding = Array.from(rawEmbedding, num => Number(num));
 
-        // Validate the embedding
-        if (!Array.isArray(embedding) || 
-            embedding.length !== 1536 || 
-            !embedding.every(n => typeof n === 'number' && !isNaN(n))) {
-          console.error('Invalid embedding structure:', {
-            isArray: Array.isArray(embedding),
-            length: embedding.length,
-            sample: embedding.slice(0, 3)
-          });
-          throw new Error(`Invalid embedding format for chunk ${index + 1}`);
+        // Additional validation
+        if (!Array.isArray(embedding) || embedding.length !== 1536) {
+          throw new Error(`Invalid embedding array length: ${embedding.length}`);
         }
 
+        if (!embedding.every(num => typeof num === 'number' && !isNaN(num))) {
+          throw new Error('Invalid embedding values detected');
+        }
+
+        // Log validation success
         console.log(`Validated embedding for chunk ${index + 1}, dimension: ${embedding.length}, sample:`, embedding.slice(0, 3));
         
         return {
@@ -204,7 +162,7 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
       }
     }));
 
-    return results.filter(Boolean);
+    return results;
   } catch (error) {
     console.error("Error generating embeddings:", error);
     throw error;
