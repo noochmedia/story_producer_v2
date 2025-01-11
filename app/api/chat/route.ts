@@ -118,10 +118,33 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         return [];
       }
 
+      // Log raw embedding result
+      console.log('Raw embedding result:', {
+        type: typeof embeddingResults[0].embedding,
+        isArray: Array.isArray(embeddingResults[0].embedding),
+        length: embeddingResults[0].embedding?.length,
+        constructor: embeddingResults[0].embedding?.constructor?.name,
+        sample: Array.isArray(embeddingResults[0].embedding) 
+          ? embeddingResults[0].embedding.slice(0, 3) 
+          : 'not an array'
+      });
+
       // Ensure the embedding is properly formatted as an array of numbers
       const queryEmbedding = embeddingResults[0].embedding;
+      
+      // Log intermediate embedding
+      console.log('Query embedding before validation:', {
+        type: typeof queryEmbedding,
+        isArray: Array.isArray(queryEmbedding),
+        length: queryEmbedding?.length,
+        constructor: queryEmbedding?.constructor?.name,
+        sample: Array.isArray(queryEmbedding) 
+          ? queryEmbedding.slice(0, 3) 
+          : 'not an array'
+      });
+
       if (!Array.isArray(queryEmbedding) || queryEmbedding.length !== 1536) {
-        throw new Error(`Invalid embedding dimensions: ${queryEmbedding.length}`);
+        throw new Error(`Invalid embedding dimensions: ${queryEmbedding?.length}`);
       }
 
       // Convert to proper number array and validate
