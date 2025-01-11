@@ -147,46 +147,23 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         throw new Error(`Invalid embedding dimensions: ${queryEmbedding?.length}`);
       }
 
-      // Convert to proper number array and validate
-      const formattedVector = Array.from(queryEmbedding).map(val => {
-        const num = Number(val);
-        if (isNaN(num)) {
-          throw new Error('Invalid embedding value detected');
-        }
-        return num;
+      // Convert embedding to a simple array of numbers
+      const vector = queryEmbedding.map(Number);
+      
+      // Log the vector format
+      console.log('Vector format:', {
+        type: typeof vector,
+        isArray: Array.isArray(vector),
+        length: vector.length,
+        sample: vector.slice(0, 5)
       });
 
-      // Detailed vector logging
-      console.log('Query vector details:', {
-        originalType: typeof queryEmbedding,
-        originalIsArray: Array.isArray(queryEmbedding),
-        originalLength: queryEmbedding.length,
-        formattedType: typeof formattedVector,
-        formattedIsArray: Array.isArray(formattedVector),
-        formattedLength: formattedVector.length,
-        sample: formattedVector.slice(0, 5),
-        allNumbers: formattedVector.every(v => typeof v === 'number'),
-        containsNaN: formattedVector.some(v => isNaN(v)),
-        vectorJSON: JSON.stringify(formattedVector.slice(0, 5))
-      });
+      // Log the raw vector
+      console.log('Raw vector:', vector);
 
-      // Log the exact query parameters being sent to Pinecone
-      const queryParams = {
-        vector: formattedVector,
-        topK: 10,
-        includeMetadata: true,
-        filter: { type: { $eq: 'source' } }
-      };
-      console.log('Pinecone query parameters:', {
-        vectorType: typeof queryParams.vector,
-        vectorIsArray: Array.isArray(queryParams.vector),
-        vectorLength: queryParams.vector.length,
-        vectorSample: queryParams.vector.slice(0, 5),
-        fullQuery: JSON.stringify(queryParams)
-      });
-
+      // Send vector directly to avoid any object wrapping
       queryResponse = await index.query({
-        vector: formattedVector,
+        vector: vector,
         topK: 10,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
