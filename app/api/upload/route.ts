@@ -148,12 +148,38 @@ export async function POST(request: NextRequest) {
         // Store each chunk in Pinecone with both content and Blob metadata
         const timestamp = Date.now();
         const chunks = embeddingResults.map((result, i) => {
-          // Ensure embedding is a plain array of numbers
-          const plainVector = [...Array.from(result.embedding, val => Number(val))];
+          // Extract and validate raw vector array
+          const rawVector = Array.from(result.embedding, val => {
+            const num = Number(val);
+            if (isNaN(num)) {
+              throw new Error(`Invalid vector value in chunk ${i}`);
+            }
+            return num;
+          });
+
+          // Validate vector before storing in Pinecone
+          if (!Array.isArray(rawVector)) {
+            throw new Error(`Vector must be an array in chunk ${i}`);
+          }
+          if (rawVector.length !== 1536) {
+            throw new Error(`Vector must have exactly 1536 dimensions, got ${rawVector.length} in chunk ${i}`);
+          }
+          if (!rawVector.every(val => typeof val === 'number' && !isNaN(val))) {
+            throw new Error(`All vector values must be valid numbers in chunk ${i}`);
+          }
+
+          // Log the validated vector
+          console.log(`Validated vector for chunk ${i}:`, {
+            type: typeof rawVector,
+            isArray: Array.isArray(rawVector),
+            length: rawVector.length,
+            sample: rawVector.slice(0, 5),
+            isValid: rawVector.every(val => typeof val === 'number' && !isNaN(val))
+          });
           
           return {
             id: `source_${timestamp}_${name}_chunk${i}`,
-            values: plainVector,
+            values: rawVector,
             metadata: {
               fileName: name,
               content: result.chunk,
