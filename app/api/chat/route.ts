@@ -90,13 +90,12 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   try {
     if (isOverviewQuery) {
       console.log('Using metadata-only query for overview');
-      // For overview queries, use a neutral vector
-      const neutralVector = Array.from({ length: 1536 }, () => 0);
+      // For overview queries, just get all sources
       queryResponse = await index.query({
-        vector: neutralVector,
-        filter: { type: { $eq: 'source' } },
+        vector: Array(1536).fill(0),
         topK: 100,
-        includeMetadata: true
+        includeMetadata: true,
+        filter: { type: { $eq: 'source' } }
       });
     } else {
       console.log('Generating embedding for specific query:', query);
@@ -108,6 +107,7 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         return [];
       }
 
+      // Use embedding directly without modification
       const queryEmbedding = embeddingResults[0].embedding;
       console.log('Querying Pinecone with vector length:', queryEmbedding.length);
       
