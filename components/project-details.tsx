@@ -18,21 +18,16 @@ export function ProjectDetails() {
       const response = await fetch('/api/project-details', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ details: projectDetails })
+        body: JSON.stringify({ content: projectDetails })
       })
 
       if (response.ok) {
-        const data = await response.json()
-        if (data.success) {
-          toast({
-            title: "Success",
-            description: "Project details saved successfully.",
-          })
-          // Refresh project details to ensure we have the latest version
-          await refreshProjectDetails()
-        } else {
-          throw new Error(data.error || 'Unknown error occurred')
-        }
+        toast({
+          title: "Success",
+          description: "Project details saved successfully.",
+        })
+        // Refresh project details to ensure we have the latest version
+        await refreshProjectDetails()
       } else {
         const errorData = await response.json()
         throw new Error(errorData.error || `HTTP error! status: ${response.status}`)
