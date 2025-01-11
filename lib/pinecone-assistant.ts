@@ -1,3 +1,4 @@
+
 import { Pinecone } from '@pinecone-database/pinecone';
 import { OpenAI } from 'openai';
 import { DocumentMetadata } from './types';
@@ -22,11 +23,11 @@ export class PineconeAssistant {
     this.host = options.host;
 
     this.pinecone = new Pinecone({
-      apiKey: this.apiKey
+      apiKey: this.apiKey,
     });
 
     this.openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY!
+      apiKey: process.env.OPENAI_API_KEY!,
     });
   }
 
@@ -35,12 +36,11 @@ export class PineconeAssistant {
     
     try {
       const index = this.pinecone.index(this.indexName);
+      const namespace = metadata.namespace || 'default-namespace'; // Add namespace handling
       
-      // Process and generate embeddings
       const processedText = await processDocument(text);
       const embeddingResults = await generateEmbedding(processedText);
       
-      // Upload chunks to Pinecone
       const vectors = embeddingResults.map((result, i) => ({
         id: `${metadata.fileName}-${i}`,
         values: result.embedding,
@@ -48,21 +48,23 @@ export class PineconeAssistant {
           ...metadata,
           content: result.chunk,
           chunkIndex: i,
-          totalChunks: embeddingResults.length
-        }
+          totalChunks: embeddingResults.length,
+        },
       }));
 
-      // Upsert vectors in batches
       const BATCH_SIZE = 100;
       for (let i = 0; i < vectors.length; i += BATCH_SIZE) {
         const batch = vectors.slice(i, i + BATCH_SIZE);
-        await index.upsert(batch);
+        await index.upsert({
+          vectors: batch,
+          namespace, // Add namespace here
+        });
       }
 
       console.log(`[Upload] Successfully processed document: ${metadata.fileName}`);
       return {
         fileName: metadata.fileName,
-        chunks: embeddingResults.length
+        chunks: embeddingResults.length,
       };
     } catch (error) {
       console.error(`[Upload] Error processing document ${metadata.fileName}:`, error);
@@ -70,43 +72,22 @@ export class PineconeAssistant {
     }
   }
 
-  async deleteDocument(fileName: string) {
-    console.log(`[Delete] Deleting document: ${fileName}`);
-    
-    try {
-      const index = this.pinecone.index(this.indexName);
-      
-      // Delete all vectors with matching fileName
-      await index.deleteMany({
-        filter: {
-          fileName: fileName
-        }
-      });
-      
-      console.log(`[Delete] Successfully deleted document: ${fileName}`);
-      return true;
-    } catch (error) {
-      console.error(`[Delete] Error deleting document ${fileName}:`, error);
-      throw error;
-    }
-  }
-
   async searchSimilar(query: string, filter?: Record<string, any>) {
     try {
       const index = this.pinecone.index(this.indexName);
+      const namespace = 'default-namespace'; // Add namespace for queries
       
-      // Generate embedding for query
       const queryEmbedding = await generateEmbedding(query);
       if (!queryEmbedding.length) {
         throw new Error('Failed to generate query embedding');
       }
       
-      // Search Pinecone
       const results = await index.query({
         vector: queryEmbedding[0].embedding,
         filter: filter,
         includeMetadata: true,
-        topK: 5
+        topK: 5,
+        namespace, // Add namespace here
       });
       
       return results;

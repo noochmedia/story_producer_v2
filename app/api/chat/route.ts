@@ -32,7 +32,8 @@ export async function POST(req: Request) {
     // Initialize Pinecone Assistant
     const assistant = new PineconeAssistant({
       apiKey: process.env.PINECONE_API_KEY!,
-      indexName: process.env.PINECONE_INDEX!
+      indexName: process.env.PINECONE_INDEX!,
+      host: process.env.PINECONE_HOST!
     });
 
     // Prepare system message based on mode
@@ -69,10 +70,10 @@ export async function POST(req: Request) {
                   updateStatus('analyzing');
 
                   // Query for relevant sources
-                  relevantSources = await assistant.query(userMessage.content, {
-                    topK: 10,
-                    filter: { type: { $eq: 'source' } }
+                  const searchResults = await assistant.searchSimilar(userMessage.content, {
+                    type: 'source'
                   });
+                  relevantSources = searchResults.matches || [];
 
                   console.log('Source search completed, found sources:', relevantSources.length);
 
