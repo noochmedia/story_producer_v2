@@ -25,17 +25,33 @@ export async function GET(request: NextRequest) {
 
     const index = pinecone.index(process.env.PINECONE_INDEX);
 
-    // Query for project details
-    const queryEmbedding = await generateEmbedding("project details");
+    // Query for all project detail chunks
+    const embeddingResults = await generateEmbedding("project details");
+    // Use the first chunk's embedding for querying
+    const queryEmbedding = embeddingResults[0].embedding;
     const queryResponse = await index.query({
       vector: queryEmbedding,
-      topK: 1,
+      topK: 100, // High number to get all chunks
       includeMetadata: true,
       filter: { type: { $eq: 'project_details' } }
     });
 
-    if (queryResponse.matches?.length > 0 && queryResponse.matches[0].metadata?.content) {
-      return NextResponse.json({ details: queryResponse.matches[0].metadata.content })
+    if (queryResponse.matches?.length > 0) {
+      // Sort chunks by index and combine content
+      const sortedChunks = queryResponse.matches
+        .filter(match => match.metadata?.chunkIndex !== undefined)
+        .sort((a, b) => 
+          (a.metadata?.chunkIndex as number) - (b.metadata?.chunkIndex as number)
+        );
+
+      if (sortedChunks.length > 0) {
+        const combinedContent = sortedChunks
+          .map(chunk => chunk.metadata?.content)
+          .filter(Boolean)
+          .join(' ');
+        
+        return NextResponse.json({ details: combinedContent });
+      }
     }
 
     return NextResponse.json({ details: '' })
@@ -75,19 +91,25 @@ export async function POST(request: NextRequest) {
 
     const index = pinecone.index(process.env.PINECONE_INDEX);
 
-    // Generate embedding for the project details
-    const embedding = await generateEmbedding(details)
-
-    // Store in Pinecone
-    await index.upsert([{
-      id: 'project_details',
-      values: embedding,
-      metadata: {
-        content: details,
-        type: 'project_details',
-        updatedAt: new Date().toISOString()
-      }
-    }])
+    // Generate embeddings for the project details
+    const embeddingResults = await generateEmbedding(details);
+    
+    // Store each chunk in Pinecone
+    const timestamp = Date.now();
+    for (let i = 0; i < embeddingResults.length; i++) {
+      const result = embeddingResults[i];
+      await index.upsert([{
+        id: `project_details_chunk${i}`,
+        values: result.embedding,
+        metadata: {
+          content: result.chunk,
+          type: 'project_details',
+          chunkIndex: i,
+          totalChunks: embeddingResults.length,
+          updatedAt: new Date().toISOString()
+        }
+      }]);
+    }
 
     return NextResponse.json({ success: true })
   } catch (error) {

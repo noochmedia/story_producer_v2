@@ -81,7 +81,9 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   const index = pinecone.index(process.env.PINECONE_INDEX);
   
   console.log('Generating embedding for context query:', query);
-  const queryEmbedding = await generateEmbedding(query);
+  const embeddingResults = await generateEmbedding(query);
+  // Use the embedding from the first chunk for searching
+  const queryEmbedding = embeddingResults[0].embedding;
   
   console.log('Querying Pinecone for relevant context...');
   const queryResponse = await index.query({
