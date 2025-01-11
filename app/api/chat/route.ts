@@ -90,13 +90,16 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   try {
     if (isOverviewQuery) {
       console.log('Using metadata-only query for overview');
-      // Use a simple array of zeros
-      const queryPayload = {
-        vector: new Array(1536).fill(0),
+      // Create and validate zero vector
+      const zeroVector = new Array(1536).fill(0);
+      
+      // Ensure vector is properly serialized
+      const queryPayload = JSON.parse(JSON.stringify({
+        vector: zeroVector,
         topK: 100,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
-      };
+      }));
 
       // Log the exact payload being sent
       console.log('Query payload:', {
@@ -104,9 +107,10 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         isArray: Array.isArray(queryPayload.vector),
         length: queryPayload.vector.length,
         sample: queryPayload.vector.slice(0, 3),
-        fullPayload: JSON.stringify(queryPayload)
+        serializedVector: JSON.stringify(queryPayload.vector.slice(0, 3))
       });
 
+      // Send query to Pinecone
       queryResponse = await index.query(queryPayload);
     } else {
       console.log('Generating embedding for specific query:', query);
@@ -135,13 +139,13 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         throw new Error(`Invalid vector dimensions: expected 1536, got ${vector.length}`);
       }
 
-      // Use the raw embedding values directly
-      const queryPayload = {
+      // Ensure vector is properly serialized
+      const queryPayload = JSON.parse(JSON.stringify({
         vector: embedding,
         topK: 10,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
-      };
+      }));
 
       // Log the exact payload being sent
       console.log('Query payload:', {
@@ -149,9 +153,10 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         isArray: Array.isArray(queryPayload.vector),
         length: queryPayload.vector.length,
         sample: queryPayload.vector.slice(0, 3),
-        fullPayload: JSON.stringify(queryPayload)
+        serializedVector: JSON.stringify(queryPayload.vector.slice(0, 3))
       });
 
+      // Send query to Pinecone
       queryResponse = await index.query(queryPayload);
     }
   } catch (error) {
