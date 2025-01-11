@@ -147,23 +147,38 @@ async function queryPineconeForContext(query: string, stage: string, controller:
         throw new Error(`Invalid embedding dimensions: ${queryEmbedding?.length}`);
       }
 
-      // Convert embedding to a simple array of numbers
-      const vector = queryEmbedding.map(Number);
-      
-      // Log the vector format
-      console.log('Vector format:', {
-        type: typeof vector,
-        isArray: Array.isArray(vector),
-        length: vector.length,
-        sample: vector.slice(0, 5)
+      // Extract and validate raw vector array
+      const rawVector = Array.from(queryEmbedding, val => {
+        const num = Number(val);
+        if (isNaN(num)) {
+          throw new Error('Invalid vector value detected');
+        }
+        return num;
       });
 
-      // Log the raw vector
-      console.log('Raw vector:', vector);
+      // Validate vector before sending to Pinecone
+      if (!Array.isArray(rawVector)) {
+        throw new Error('Vector must be an array');
+      }
+      if (rawVector.length !== 1536) {
+        throw new Error(`Vector must have exactly 1536 dimensions, got ${rawVector.length}`);
+      }
+      if (!rawVector.every(val => typeof val === 'number' && !isNaN(val))) {
+        throw new Error('All vector values must be valid numbers');
+      }
 
-      // Send vector directly to avoid any object wrapping
+      // Log the validated vector
+      console.log('Validated vector:', {
+        type: typeof rawVector,
+        isArray: Array.isArray(rawVector),
+        length: rawVector.length,
+        sample: rawVector.slice(0, 5),
+        isValid: rawVector.every(val => typeof val === 'number' && !isNaN(val))
+      });
+
+      // Send validated vector to Pinecone
       queryResponse = await index.query({
-        vector: vector,
+        vector: rawVector,
         topK: 10,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
