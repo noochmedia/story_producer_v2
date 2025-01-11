@@ -21,7 +21,11 @@ const OVERLAP_SIZE = 200;
  * @returns Array of embeddings
  */
 async function generatePineconeEmbeddings(inputs: string[]): Promise<number[][]> {
-  const response = await fetch('https://storytools-embedding-3-sj0uqym.svc.aped-4627-b74a.pinecone.io/vectors/embed', {
+  if (!process.env.PINECONE_HOST) {
+    throw new Error('PINECONE_HOST environment variable is not set');
+  }
+
+  const response = await fetch(`${process.env.PINECONE_HOST}/vectors/embed`, {
     method: 'POST',
     headers: {
       'Api-Key': process.env.PINECONE_API_KEY!,
