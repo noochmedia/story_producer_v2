@@ -100,14 +100,12 @@ async function queryPineconeForContext(query: string, stage: string, controller:
       });
       
       // Ensure the query matches Pinecone's expected format
-      const queryRequest = {
-        vector: zeroVector as number[],
+      queryResponse = await index.query({
+        vector: Array.from(zeroVector), // Convert to plain array
         topK: 100,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
-      } as const;
-
-      queryResponse = await index.query(queryRequest);
+      });
     } else {
       console.log('Generating embedding for specific query:', query);
       const embeddingResults = await generateEmbedding(query);
@@ -147,15 +145,12 @@ async function queryPineconeForContext(query: string, stage: string, controller:
       });
 
       // Query Pinecone with validated vector
-      // Ensure the query matches Pinecone's expected format
-      const queryRequest = {
-        vector: vector,
+      queryResponse = await index.query({
+        vector: Array.from(vector), // Convert to plain array
         topK: 10,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
-      } as const;
-
-      queryResponse = await index.query(queryRequest);
+      });
     }
   } catch (error) {
     // Enhanced error logging

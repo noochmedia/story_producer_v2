@@ -146,7 +146,8 @@ export async function POST(request: NextRequest) {
         const timestamp = Date.now();
         const chunks = embeddingResults.map((result, i) => {
           // Convert embedding to a plain array of numbers
-          const vector = Array.from(result.embedding).map(val => {
+          const embedding = result.embedding;
+          const vector = Array.from(embedding).map(val => {
             const num = Number(val);
             if (isNaN(num)) {
               throw new Error(`Invalid vector value in chunk ${i}`);
@@ -166,19 +167,22 @@ export async function POST(request: NextRequest) {
             throw new Error(`Invalid vector dimensions: expected 1536, got ${vector.length}`);
           }
 
+          // Create a plain array copy to ensure no object references
+          const plainVector = [...vector];
+
           // Log the vector we're about to store
           console.log(`Vector for chunk ${i}:`, {
-            type: typeof vector,
-            isArray: Array.isArray(vector),
-            length: vector.length,
-            sample: vector.slice(0, 3),
-            allNumbers: vector.every(v => typeof v === 'number' && !isNaN(v)),
-            stringified: JSON.stringify(vector.slice(0, 3))
+            type: typeof plainVector,
+            isArray: Array.isArray(plainVector),
+            length: plainVector.length,
+            sample: plainVector.slice(0, 3),
+            allNumbers: plainVector.every(v => typeof v === 'number' && !isNaN(v)),
+            stringified: JSON.stringify(plainVector.slice(0, 3))
           });
 
           return {
             id: `source_${timestamp}_${name}_chunk${i}`,
-            values: vector,
+            values: plainVector,
             metadata: {
               fileName: name,
               content: result.chunk,

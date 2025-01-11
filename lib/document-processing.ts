@@ -134,27 +134,35 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
           input: chunk,
         });
 
-        // Extract the embedding array
+        // Extract and validate the embedding
         const rawEmbedding = response.data[0].embedding;
 
-        // Ensure it's a flat array of numbers
-        const embedding = Array.from(rawEmbedding, num => Number(num));
+        // Convert to a plain array of numbers and validate
+        const embedding = Array.from(rawEmbedding).map(val => {
+          const num = Number(val);
+          if (isNaN(num)) {
+            throw new Error('Invalid vector value detected');
+          }
+          return num;
+        });
 
         // Additional validation
         if (!Array.isArray(embedding) || embedding.length !== 1536) {
           throw new Error(`Invalid embedding array length: ${embedding.length}`);
         }
 
-        if (!embedding.every(num => typeof num === 'number' && !isNaN(num))) {
-          throw new Error('Invalid embedding values detected');
-        }
-
         // Log validation success
-        console.log(`Validated embedding for chunk ${index + 1}, dimension: ${embedding.length}, sample:`, embedding.slice(0, 3));
+        console.log(`Validated embedding for chunk ${index + 1}:`, {
+          dimension: embedding.length,
+          sample: embedding.slice(0, 3),
+          isArray: Array.isArray(embedding),
+          allNumbers: embedding.every(v => typeof v === 'number' && !isNaN(v))
+        });
         
+        // Return as a plain object with primitive values
         return {
           chunk,
-          embedding
+          embedding: [...embedding] // Create a new array to ensure it's a plain array
         };
       } catch (error) {
         console.error(`Error generating embedding for chunk ${index + 1}:`, error);
