@@ -25,12 +25,10 @@ export async function GET(request: NextRequest) {
 
     const index = pinecone.index(process.env.PINECONE_INDEX);
 
-    // Query for all project detail chunks
-    const embeddingResults = await generateEmbedding("project details");
-    // Use the first chunk's embedding for querying
-    const queryEmbedding = embeddingResults[0].embedding;
+    // Use a neutral vector to get all project details
+    const neutralVector = Array.from({ length: 1536 }, () => 0);
     const queryResponse = await index.query({
-      vector: queryEmbedding,
+      vector: neutralVector,
       topK: 100, // High number to get all chunks
       includeMetadata: true,
       filter: { type: { $eq: 'project_details' } }
@@ -98,9 +96,15 @@ export async function POST(request: NextRequest) {
     const timestamp = Date.now();
     for (let i = 0; i < embeddingResults.length; i++) {
       const result = embeddingResults[i];
+      // Ensure vector values are numbers
+      const validVector = result.embedding.map(val => Number(val));
+      if (!validVector.every(val => typeof val === 'number' && !isNaN(val))) {
+        throw new Error('Invalid vector values');
+      }
+
       await index.upsert([{
         id: `project_details_chunk${i}`,
-        values: result.embedding,
+        values: validVector,
         metadata: {
           content: result.chunk,
           type: 'project_details',
