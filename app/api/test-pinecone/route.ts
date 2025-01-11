@@ -7,13 +7,13 @@ export async function GET() {
       apiKey: process.env.PINECONE_API_KEY!
     })
 
-    const index = pinecone.index(process.env.PINECONE_INDEX || 'story-tools-embedding2-sj0uqym')
+    const index = pinecone.index(process.env.PINECONE_INDEX || 'storytools-embedding-3')
 
-    // Create a simple test vector
-    const vector = new Array(1536).fill(0);
+    // Create a test vector
+    const vector = Array(1024).fill(0);
 
     // Log vector details
-    console.log('Test vector:', {
+    console.log('Vector details:', {
       type: typeof vector,
       isArray: Array.isArray(vector),
       length: vector.length,
