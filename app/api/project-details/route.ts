@@ -1,107 +1,73 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { PineconeAssistant } from '../../../lib/pinecone-assistant'
+import { NextRequest, NextResponse } from 'next/server';
+import { PineconeAssistant } from '@/lib/pinecone-assistant';
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 export async function GET(request: NextRequest) {
   try {
-    // Validate environment variables
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY environment variable is not set');
-    }
-    if (!process.env.PINECONE_API_KEY) {
-      throw new Error('PINECONE_API_KEY environment variable is not set');
-    }
-    if (!process.env.PINECONE_INDEX) {
-      throw new Error('PINECONE_INDEX environment variable is not set');
-    }
-
     // Initialize Pinecone Assistant
     const assistant = new PineconeAssistant({
-      apiKey: process.env.PINECONE_API_KEY,
-      indexName: process.env.PINECONE_INDEX
+      apiKey: process.env.PINECONE_API_KEY!,
+      indexName: process.env.PINECONE_INDEX!,
+      host: process.env.PINECONE_HOST!
     });
 
-    // Query for project details
-    const matches = await assistant.query('', {
-      topK: 100,
-      filter: { type: { $eq: 'project_details' } }
+    // Search for project details
+    const results = await assistant.searchSimilar('', {
+      type: 'project_details'
     });
 
-    if (matches.length > 0) {
-      // Sort chunks by index and combine content
-      const sortedChunks = matches
-        .filter(match => match.metadata?.chunkIndex !== undefined)
-        .sort((a, b) => 
-          (a.metadata?.chunkIndex as number) - (b.metadata?.chunkIndex as number)
-        );
+    // Sort matches by timestamp if available
+    const sortedMatches = results.matches.sort((a, b) => {
+      const aTime = String(a.metadata?.timestamp || '');
+      const bTime = String(b.metadata?.timestamp || '');
+      return bTime.localeCompare(aTime);
+    });
 
-      if (sortedChunks.length > 0) {
-        const combinedContent = sortedChunks
-          .map(chunk => chunk.metadata?.content)
-          .filter(Boolean)
-          .join(' ');
-        
-        return NextResponse.json({ details: combinedContent });
-      }
-    }
+    // Extract content from chunks
+    const chunks = sortedMatches.map(match => {
+      const content = match.metadata?.content || '';
+      return content;
+    });
 
-    return NextResponse.json({ details: '' })
+    return NextResponse.json({ content: chunks.join('\n\n') });
   } catch (error) {
-    console.error('Error fetching project details:', error)
-    return NextResponse.json({ 
-      error: 'Failed to fetch project details',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 })
+    console.error('Error fetching project details:', error);
+    return NextResponse.json({ error: 'Failed to fetch project details' }, { status: 500 });
   }
 }
 
 export async function POST(request: NextRequest) {
   try {
-    // Validate environment variables
-    if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY environment variable is not set');
-    }
-    if (!process.env.PINECONE_API_KEY) {
-      throw new Error('PINECONE_API_KEY environment variable is not set');
-    }
-    if (!process.env.PINECONE_INDEX) {
-      throw new Error('PINECONE_INDEX environment variable is not set');
-    }
+    const data = await request.json();
+    const { content } = data;
 
-    const data = await request.json()
-    const { details } = data
-
-    if (!details) {
-      return NextResponse.json({ error: 'No details provided' }, { status: 400 })
+    if (!content) {
+      return NextResponse.json({ error: 'No content provided' }, { status: 400 });
     }
 
     // Initialize Pinecone Assistant
     const assistant = new PineconeAssistant({
-      apiKey: process.env.PINECONE_API_KEY,
-      indexName: process.env.PINECONE_INDEX
+      apiKey: process.env.PINECONE_API_KEY!,
+      indexName: process.env.PINECONE_INDEX!,
+      host: process.env.PINECONE_HOST!
     });
 
-    // First delete any existing project details
-    await assistant.deleteDocuments({ type: { $eq: 'project_details' } });
+    // Delete existing project details
+    await assistant.deleteDocument('project_details');
 
     // Upload new project details
-    const result = await assistant.uploadDocument(details, {
-      fileName: 'project_details.txt',
+    const result = await assistant.uploadDocument(content, {
+      fileName: 'project_details',
       fileType: 'text/plain',
-      uploadedAt: new Date().toISOString(),
-      type: 'project_details'
+      type: 'project_details',
+      uploadedAt: new Date().toISOString()
     });
 
-    console.log('Successfully updated project details:', result);
-
-    return NextResponse.json({ success: true })
+    return NextResponse.json(result);
   } catch (error) {
-    console.error('Error saving project details:', error)
-    return NextResponse.json({ 
-      error: 'Failed to save project details',
-      details: error instanceof Error ? error.message : 'Unknown error'
-    }, { status: 500 })
+    console.error('Error updating project details:', error);
+    return NextResponse.json({ error: 'Failed to update project details' }, { status: 500 });
   }
 }
