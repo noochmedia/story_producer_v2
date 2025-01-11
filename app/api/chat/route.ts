@@ -86,28 +86,28 @@ async function queryPineconeForContext(query: string, stage: string, controller:
                          query.toLowerCase().includes('all') ||
                          query.toLowerCase().includes('everything');
 
-  let queryResponse;
+  let queryResponse: { matches: PineconeMatch[] };
   try {
     if (isOverviewQuery) {
       console.log('Using metadata-only query for overview');
       // For overview queries, just get all sources
-      // Create a properly formatted zero vector for overview queries
-      const zeroVector = Array.from({ length: 1536 }, () => 0.0);
-      
-      console.log('Overview query vector:', {
-        type: typeof zeroVector,
-        isArray: Array.isArray(zeroVector),
+      // For overview queries, use a zero vector with filtering
+      const zeroVector = Array.from({ length: 1536 }, () => 0);
+      console.log('Using zero vector for overview query:', {
         length: zeroVector.length,
-        sample: zeroVector.slice(0, 5),
-        allNumbers: zeroVector.every(v => typeof v === 'number')
+        sample: zeroVector.slice(0, 3),
+        isValid: zeroVector.every(v => v === 0)
       });
-
-      queryResponse = await index.query({
-        vector: zeroVector,
+      
+      // Ensure the query matches Pinecone's expected format
+      const queryRequest = {
+        vector: zeroVector as number[],
         topK: 100,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
-      });
+      } as const;
+
+      queryResponse = await index.query(queryRequest);
     } else {
       console.log('Generating embedding for specific query:', query);
       const embeddingResults = await generateEmbedding(query);
@@ -115,28 +115,47 @@ async function queryPineconeForContext(query: string, stage: string, controller:
       if (!embeddingResults || embeddingResults.length === 0) {
         console.error('No valid embeddings generated');
         controller.enqueue(new TextEncoder().encode("I couldn't process your query effectively. Could you try rephrasing it?"));
-        return [];
+        return [] as PineconeMatch[];
       }
 
-      // Extract and validate vector
-      const vector = embeddingResults[0].embedding;
+      // Extract embedding and ensure it's a plain array of numbers
+      const embedding = embeddingResults[0].embedding;
+      
+      // Convert to a plain array of numbers and validate
+      const vector = Array.from(embedding).map(val => {
+        const num = Number(val);
+        if (isNaN(num)) {
+          throw new Error('Invalid vector value detected');
+        }
+        return num;
+      });
 
-      // Log vector before query
-      console.log('Vector before Pinecone query:', {
+      // Additional validation
+      if (!Array.isArray(vector) || vector.length !== 1536) {
+        throw new Error(`Invalid vector dimensions: expected 1536, got ${vector.length}`);
+      }
+
+      // Log the exact vector we're sending to Pinecone
+      console.log('Vector for Pinecone query:', {
         type: typeof vector,
         isArray: Array.isArray(vector),
         length: vector.length,
         sample: vector.slice(0, 3),
-        allNumbers: vector.every(v => typeof v === 'number' && !isNaN(v))
+        allNumbers: vector.every(v => typeof v === 'number' && !isNaN(v)),
+        // Log the actual structure
+        stringified: JSON.stringify(vector.slice(0, 3))
       });
 
-      // Query Pinecone
-      queryResponse = await index.query({
-        vector,
+      // Query Pinecone with validated vector
+      // Ensure the query matches Pinecone's expected format
+      const queryRequest = {
+        vector: vector,
         topK: 10,
         includeMetadata: true,
         filter: { type: { $eq: 'source' } }
-      });
+      } as const;
+
+      queryResponse = await index.query(queryRequest);
     }
   } catch (error) {
     // Enhanced error logging
@@ -166,13 +185,13 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   });
   
   // Process and clean matches with dual storage support
-  const validMatches = queryResponse.matches
+  const validMatches: PineconeMatch[] = queryResponse.matches
     .filter(match => {
       // Check for content in either direct content or processed content
       const hasContent = match.metadata?.content || match.metadata?.processedContent;
       return hasContent && typeof hasContent === 'string' && hasContent.trim() !== '';
     })
-    .map(match => {
+    .map((match: PineconeMatch) => {
       if (!match.metadata) return match;
       
       // Use processedContent if available, fall back to content
@@ -189,7 +208,7 @@ async function queryPineconeForContext(query: string, stage: string, controller:
     });
 
   console.log('Valid matches with content:', validMatches.length);
-  validMatches.forEach((match, i) => {
+  validMatches.forEach((match: PineconeMatch, i: number) => {
     console.log(`Match ${i + 1}:`, {
       score: match.score,
       fileName: match.metadata?.fileName,
@@ -200,7 +219,7 @@ async function queryPineconeForContext(query: string, stage: string, controller:
   // Send a message if no matches found
   if (validMatches.length === 0) {
     controller.enqueue(new TextEncoder().encode("I couldn't find any relevant information in the sources about that topic. Would you like to try a different question?"));
-    return [];
+    return [] as PineconeMatch[];
   }
 
   return validMatches;

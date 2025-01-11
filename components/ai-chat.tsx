@@ -198,17 +198,9 @@ export function AIChat() {
 
           // Handle streaming content
           if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(5))
-              if (data.choices?.[0]?.delta?.content) {
-                accumulatedContent += data.choices[0].delta.content
-              }
-            } catch (e) {
-              // If we can't parse as JSON, check if it's a direct text response
-              const content = line.replace('data: ', '').trim()
-              if (content && !content.includes('[DONE]')) {
-                accumulatedContent += content + ' '
-              }
+            const content = line.replace('data: ', '').trim()
+            if (content && !content.includes('[DONE]')) {
+              accumulatedContent += content + ' '
             }
           } else if (!line.includes('data:')) {
             // Direct text content
@@ -230,16 +222,19 @@ export function AIChat() {
       }
 
       // Handle any remaining content in the buffer
-      if (buffer.trim() && !buffer.includes('data:')) {
-        accumulatedContent += buffer + ' '
-        setMessages(prev => {
-          const newMessages = [...prev]
-          newMessages[newMessages.length - 1] = {
-            role: 'assistant',
-            content: accumulatedContent.trim()
-          }
-          return newMessages
-        })
+      if (buffer.trim()) {
+        const content = buffer.replace('data: ', '').trim()
+        if (content && !content.includes('[DONE]')) {
+          accumulatedContent += content + ' '
+          setMessages(prev => {
+            const newMessages = [...prev]
+            newMessages[newMessages.length - 1] = {
+              role: 'assistant',
+              content: accumulatedContent.trim()
+            }
+            return newMessages
+          })
+        }
       }
 
     } catch (error) {
