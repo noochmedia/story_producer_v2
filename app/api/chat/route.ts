@@ -142,14 +142,28 @@ async function queryPineconeForContext(query: string, stage: string, controller:
 
   console.log('Found matches:', queryResponse.matches.length);
   
-  // Process and clean matches
+  // Process and clean matches with dual storage support
   const validMatches = queryResponse.matches
-    .filter(match => 
-      match.metadata?.content && 
-      typeof match.metadata.content === 'string' && 
-      match.metadata.content.trim() !== ''
-    )
-    .map(processMatch);
+    .filter(match => {
+      // Check for content in either direct content or processed content
+      const hasContent = match.metadata?.content || match.metadata?.processedContent;
+      return hasContent && typeof hasContent === 'string' && hasContent.trim() !== '';
+    })
+    .map(match => {
+      if (!match.metadata) return match;
+      
+      // Use processedContent if available, fall back to content
+      const content = match.metadata.processedContent || match.metadata.content;
+      if (typeof content !== 'string') return match;
+
+      return {
+        ...match,
+        metadata: {
+          ...match.metadata,
+          content: cleanTranscriptContent(content)
+        }
+      };
+    });
 
   console.log('Valid matches with content:', validMatches.length);
   validMatches.forEach((match, i) => {

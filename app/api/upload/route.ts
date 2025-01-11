@@ -145,24 +145,31 @@ export async function POST(request: NextRequest) {
         const embeddingResults = await generateEmbedding(text)
         console.log(`Generated embeddings for ${embeddingResults.length} chunks`)
 
-        // Store each chunk in Pinecone with improved metadata
+        // Store each chunk in Pinecone with both content and Blob metadata
         const timestamp = Date.now();
         const chunks = embeddingResults.map((result, i) => ({
           id: `source_${timestamp}_${name}_chunk${i}`,
-          values: result.embedding, // Use embedding directly
+          values: result.embedding,
           metadata: {
             fileName: name,
+            // Store the actual content directly in metadata
             content: result.chunk,
+            // Store processed content for consistency
+            processedContent: result.chunk,
             type: 'source',
             uploadedAt: new Date().toISOString(),
             chunkIndex: i,
             totalChunks: embeddingResults.length,
             chunkLength: result.chunk.length,
+            // Always include Blob metadata when available
             ...(blob && {
               fileUrl: blob.url,
               filePath: blob.pathname,
-              fileType: file.type || undefined
-            })
+              fileType: file.type || undefined,
+              hasBlob: true // Flag to indicate Blob storage is being used
+            }),
+            // Add storage version for future compatibility
+            storageVersion: 'dual_storage_v1'
           }
         }));
 
