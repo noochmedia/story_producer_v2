@@ -4,14 +4,13 @@ import { Pinecone } from '@pinecone-database/pinecone'
 export async function GET() {
   try {
     const pinecone = new Pinecone({
-      apiKey: process.env.PINECONE_API_KEY!,
-      environment: 'aped-4627-b74a',
+      apiKey: process.env.PINECONE_API_KEY!
     })
 
-    const index = pinecone.index('story-tools-embeddings-sj0uqym')
+    const index = pinecone.index(process.env.PINECONE_INDEX || 'story-tools-embedding2-sj0uqym')
 
     const queryResponse = await index.query({
-      vector: Array(384).fill(0),  // Dummy vector
+      vector: Array(1536).fill(0),  // Dummy vector for 1536 dimensions
       topK: 5,
       includeMetadata: true,
       filter: { type: { $eq: 'source' } }
@@ -35,4 +34,3 @@ export async function GET() {
     }, { status: 500 })
   }
 }
-
