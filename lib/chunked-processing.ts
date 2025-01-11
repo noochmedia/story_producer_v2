@@ -68,6 +68,19 @@ export async function processSourcesInChunks(
   const maxChunks = isOverviewQuery ? MAX_CHUNKS * 2 : MAX_CHUNKS;
   console.log(`Using max chunks: ${maxChunks}`);
 
+  // Validate source vectors before processing
+  sources.forEach((source, index) => {
+    if (!source.values || !Array.isArray(source.values) || source.values.length !== 1536) {
+      console.error(`Invalid vector in source ${index}:`, source.values);
+      throw new Error(`Invalid vector format in source ${index}`);
+    }
+    // Ensure vector values are numbers
+    source.values = source.values.map(val => Number(val));
+    if (!source.values.every(val => typeof val === 'number' && !isNaN(val))) {
+      throw new Error(`Invalid vector values in source ${index}`);
+    }
+  });
+
   // Split sources into chunks based on token count
   const chunks: PineconeMatch[][] = [];
   let currentChunk: PineconeMatch[] = [];
