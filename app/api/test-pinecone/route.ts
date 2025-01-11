@@ -9,45 +9,36 @@ export async function GET() {
 
     const index = pinecone.index(process.env.PINECONE_INDEX || 'story-tools-embedding2-sj0uqym')
 
-    // Create a test vector with proper validation
-    const testVector = Array(1536).fill(0).map(Number);
-    
-    // Log the test vector details
-    console.log('Test vector details:', {
-      type: typeof testVector,
-      isArray: Array.isArray(testVector),
-      length: testVector.length,
-      sample: testVector.slice(0, 3),
-      allNumbers: testVector.every(v => typeof v === 'number' && !isNaN(v)),
-      serializedSample: JSON.stringify(testVector.slice(0, 3))
+    // Create a simple test vector
+    const vector = new Array(1536).fill(0);
+
+    // Log vector details
+    console.log('Test vector:', {
+      type: typeof vector,
+      isArray: Array.isArray(vector),
+      length: vector.length,
+      sample: vector.slice(0, 3)
     });
 
-    // Create the query payload
-    const queryPayload = {
-      vector: testVector,
-      topK: 5,
-      includeMetadata: true,
-      filter: { type: { $eq: 'source' } }
-    };
-
-    console.log('Query payload:', JSON.stringify(queryPayload, null, 2));
-
-    const queryResponse = await index.query(queryPayload);
+    // Test query with minimal options
+    const queryResponse = await index.query({
+      vector,
+      topK: 1
+    });
 
     return NextResponse.json({
       success: true,
-      message: 'Successfully queried Pinecone',
+      message: 'Successfully tested Pinecone',
       matches: queryResponse.matches.map(match => ({
         id: match.id,
-        score: match.score,
-        metadata: match.metadata,
+        score: match.score
       }))
     })
   } catch (error) {
-    console.error('Error querying Pinecone:', error)
+    console.error('Error testing Pinecone:', error)
     return NextResponse.json({
       success: false,
-      message: 'Failed to query Pinecone',
+      message: 'Failed to test Pinecone',
       error: error instanceof Error ? error.message : 'Unknown error'
     }, { status: 500 })
   }
