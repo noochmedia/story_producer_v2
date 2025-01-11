@@ -24,6 +24,7 @@ export const revalidate = 0
 
 // Maximum file size (100MB)
 const MAX_FILE_SIZE = 100 * 1024 * 1024;
+const MAX_FILES = 50;
 
 async function processFile(file: File): Promise<ProcessedFile> {
   // Validate file size
@@ -94,9 +95,12 @@ export async function POST(request: NextRequest) {
     if (!process.env.PINECONE_INDEX) {
       throw new Error('PINECONE_INDEX environment variable is not set');
     }
+    if (!process.env.PINECONE_HOST) {
+      throw new Error('PINECONE_HOST environment variable is not set');
+    }
 
     // Get form data
-    const formData = await request.formData()
+    const formData = await request.formData();
     const entries = Array.from(formData.entries()) as [string, File | string][];
     console.log('FormData entries:', entries.map(([key, value]) => ({
       key,
@@ -105,12 +109,20 @@ export async function POST(request: NextRequest) {
     })));
 
     // Handle both single file and multiple files
-    const singleFile = formData.get('file')
-    const multipleFiles = formData.getAll('files')
+    const singleFile = formData.get('file');
+    const multipleFiles = formData.getAll('files');
     
     // Ensure we only process File objects
     const files = (singleFile instanceof File ? [singleFile] : 
-                  multipleFiles.filter((f): f is File => f instanceof File))
+                  multipleFiles.filter((f): f is File => f instanceof File));
+
+    // Validate file count
+    if (!files.length) {
+      return NextResponse.json({ error: 'No files provided' }, { status: 400 });
+    }
+    if (files.length > MAX_FILES) {
+      return NextResponse.json({ error: `Maximum ${MAX_FILES} files allowed` }, { status: 400 });
+    }
 
     console.log('Files array length:', files.length);
     console.log('Files details:', files.map(file => ({
@@ -119,14 +131,11 @@ export async function POST(request: NextRequest) {
       size: file.size
     })));
 
-    if (!files.length) {
-      return NextResponse.json({ error: 'No files provided' }, { status: 400 })
-    }
-
     // Initialize Pinecone Assistant
     const assistant = new PineconeAssistant({
       apiKey: process.env.PINECONE_API_KEY,
-      indexName: process.env.PINECONE_INDEX
+      indexName: process.env.PINECONE_INDEX,
+      host: process.env.PINECONE_HOST
     });
 
     // Process each file
@@ -142,8 +151,8 @@ export async function POST(request: NextRequest) {
         const result = await assistant.uploadDocument(text, {
           fileName: name,
           fileType: file.type || 'text/plain',
-          uploadedAt: new Date().toISOString(),
           type: 'source',
+          uploadedAt: new Date().toISOString(),
           ...(blob && {
             fileUrl: blob.url,
             filePath: blob.pathname,
@@ -151,8 +160,7 @@ export async function POST(request: NextRequest) {
           })
         });
 
-        console.log(`[Upload] Successfully processed ${name}:`, result);
-
+        console.log(`Successfully processed ${name}:`, result);
         return { success: true, fileName: name };
       } catch (error) {
         console.error(`Error processing file ${file.name}:`, error);

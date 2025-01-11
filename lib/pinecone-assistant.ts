@@ -4,7 +4,7 @@ import OpenAI from 'openai';
 interface AssistantOptions {
   apiKey: string;
   indexName: string;
-  environment?: string;
+  host?: string;
 }
 
 interface DocumentMetadata {
@@ -32,14 +32,23 @@ export class PineconeAssistant {
   private openai: OpenAI;
 
   constructor(options: AssistantOptions) {
+    if (!process.env.PINECONE_HOST) {
+      throw new Error('PINECONE_HOST environment variable is not set');
+    }
+
     this.apiKey = options.apiKey;
     this.pinecone = new Pinecone({
       apiKey: this.apiKey
     });
     this.index = this.pinecone.index(options.indexName);
-    this.embeddingHost = 'https://storytools-embedding-3-sj0uqym.svc.aped-4627-b74a.pinecone.io';
+    this.embeddingHost = options.host || process.env.PINECONE_HOST;
     this.openai = new OpenAI({
       apiKey: process.env.OPENAI_API_KEY
+    });
+
+    console.log('[Assistant] Initialized with:', {
+      indexName: options.indexName,
+      embeddingHost: this.embeddingHost.replace(this.apiKey, '[REDACTED]')
     });
   }
 
@@ -47,28 +56,63 @@ export class PineconeAssistant {
    * Generate embeddings using Pinecone's hosted model
    */
   private async generateEmbeddings(texts: string[]): Promise<number[][]> {
-    const response = await fetch(`${this.embeddingHost}/vectors/embed`, {
-      method: 'POST',
-      headers: {
-        'Api-Key': this.apiKey,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'multilingual-e5-large',
-        inputs: texts,
-        parameters: {
-          input_type: 'passage',
-          truncate: 'END'
-        }
-      })
-    });
+    // Add retry logic for serverless cold starts
+    const maxRetries = 3;
+    let lastError: any;
 
-    if (!response.ok) {
-      throw new Error(`Pinecone embedding API error: ${response.statusText}`);
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const response = await fetch(`${this.embeddingHost}/vectors/embed`, {
+          method: 'POST',
+          headers: {
+            'Api-Key': this.apiKey,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            model: 'multilingual-e5-large',
+            inputs: texts,
+            parameters: {
+              input_type: 'passage',
+              truncate: 'END'
+            }
+          })
+        });
+
+        if (!response.ok) {
+          const error = await response.text().catch(() => response.statusText);
+          console.error('[Assistant] Embedding API error:', {
+            status: response.status,
+            statusText: response.statusText,
+            error,
+            attempt,
+            host: this.embeddingHost.replace(this.apiKey, '[REDACTED]')
+          });
+
+          // If it's a cold start (503/504), wait and retry
+          if ((response.status === 503 || response.status === 504) && attempt < maxRetries) {
+            const delay = Math.pow(2, attempt) * 1000; // Exponential backoff
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+
+          throw new Error(`Pinecone embedding API error: ${error}`);
+        }
+
+        const data = await response.json();
+        return data.embeddings;
+      } catch (error) {
+        console.error(`[Assistant] Attempt ${attempt} failed:`, error);
+        lastError = error;
+
+        if (attempt < maxRetries) {
+          const delay = Math.pow(2, attempt) * 1000;
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        }
+      }
     }
 
-    const data = await response.json();
-    return data.embeddings;
+    throw lastError;
   }
 
   /**
@@ -156,9 +200,16 @@ export class PineconeAssistant {
       const chunks = await this.splitIntoChunks(content);
       console.log(`[Assistant] Split into ${chunks.length} chunks`);
 
-      // Generate embeddings for all chunks
-      const embeddings = await this.generateEmbeddings(chunks);
-      console.log(`[Assistant] Generated ${embeddings.length} embeddings`);
+      // Process chunks in smaller batches for serverless limits
+      const EMBEDDING_BATCH_SIZE = 20;
+      const allEmbeddings: number[][] = [];
+      
+      for (let i = 0; i < chunks.length; i += EMBEDDING_BATCH_SIZE) {
+        const batchChunks = chunks.slice(i, i + EMBEDDING_BATCH_SIZE);
+        const batchEmbeddings = await this.generateEmbeddings(batchChunks);
+        allEmbeddings.push(...batchEmbeddings);
+        console.log(`[Assistant] Generated embeddings for batch ${Math.floor(i/EMBEDDING_BATCH_SIZE) + 1}/${Math.ceil(chunks.length/EMBEDDING_BATCH_SIZE)}`);
+      }
 
       // Calculate relevance scores for chunks
       const relevanceScores = await Promise.all(
@@ -169,7 +220,7 @@ export class PineconeAssistant {
       const timestamp = Date.now();
       const vectors = chunks.map((chunk, i) => ({
         id: `${metadata.type}_${timestamp}_${metadata.fileName}_chunk${i}`,
-        values: embeddings[i],
+        values: allEmbeddings[i],
         metadata: {
           ...metadata,
           content: chunk,
@@ -190,12 +241,12 @@ export class PineconeAssistant {
         }
       });
 
-      // Upload vectors in batches
-      const BATCH_SIZE = 100;
-      for (let i = 0; i < vectors.length; i += BATCH_SIZE) {
-        const batch = vectors.slice(i, i + BATCH_SIZE);
+      // Upload vectors in smaller batches for serverless
+      const UPSERT_BATCH_SIZE = 50;
+      for (let i = 0; i < vectors.length; i += UPSERT_BATCH_SIZE) {
+        const batch = vectors.slice(i, i + UPSERT_BATCH_SIZE);
         await this.index.upsert(batch);
-        console.log(`[Assistant] Uploaded batch ${Math.floor(i/BATCH_SIZE) + 1}/${Math.ceil(vectors.length/BATCH_SIZE)}`);
+        console.log(`[Assistant] Uploaded batch ${Math.floor(i/UPSERT_BATCH_SIZE) + 1}/${Math.ceil(vectors.length/UPSERT_BATCH_SIZE)}`);
       }
 
       // Get index stats after upload
@@ -346,8 +397,8 @@ export class PineconeAssistant {
       });
 
       if (queryResponse.matches.length > 0) {
-        // Delete in batches
-        const BATCH_SIZE = 100;
+        // Delete in smaller batches for serverless
+        const BATCH_SIZE = 50;
         const ids = queryResponse.matches.map((match: QueryMatch) => match.id);
 
         for (let i = 0; i < ids.length; i += BATCH_SIZE) {
