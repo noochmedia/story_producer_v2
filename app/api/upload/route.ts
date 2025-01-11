@@ -134,52 +134,33 @@ export async function POST(request: NextRequest) {
     // Process each file
     const results: UploadResult[] = await Promise.all(files.map(async (file: File) => {
       try {
-        // Extract text from file
-        const { text, name, blob } = await processFile(file)
+        const { text, name, blob } = await processFile(file);
         
         if (!text.trim()) {
-          throw new Error(`No content extracted from ${name}`)
+          throw new Error(`No content extracted from ${name}`);
         }
 
-        // Generate embeddings for chunks
-        const embeddingResults = await generateEmbedding(text)
-        console.log(`Generated embeddings for ${embeddingResults.length} chunks`)
+        const embeddingResults = await generateEmbedding(text);
+        console.log(`Generated embeddings for ${embeddingResults.length} chunks`);
 
-        // Store each chunk in Pinecone with both content and Blob metadata
         const timestamp = Date.now();
         const chunks = embeddingResults.map((result, i) => {
-          // Extract and validate raw vector array
-          const rawVector = Array.from(result.embedding, val => {
-            const num = Number(val);
-            if (isNaN(num)) {
-              throw new Error(`Invalid vector value in chunk ${i}`);
-            }
-            return num;
-          });
-
-          // Validate vector before storing in Pinecone
-          if (!Array.isArray(rawVector)) {
-            throw new Error(`Vector must be an array in chunk ${i}`);
-          }
-          if (rawVector.length !== 1536) {
-            throw new Error(`Vector must have exactly 1536 dimensions, got ${rawVector.length} in chunk ${i}`);
-          }
-          if (!rawVector.every(val => typeof val === 'number' && !isNaN(val))) {
-            throw new Error(`All vector values must be valid numbers in chunk ${i}`);
+          // Validate embedding structure
+          if (!Array.isArray(result.embedding) || 
+              result.embedding.length !== 1536) {
+            console.error('Invalid embedding structure:', {
+              index: i,
+              type: typeof result.embedding,
+              isArray: Array.isArray(result.embedding),
+              length: result.embedding?.length,
+              sample: Array.isArray(result.embedding) ? result.embedding.slice(0, 3) : null
+            });
+            throw new Error(`Invalid embedding structure for chunk ${i}`);
           }
 
-          // Log the validated vector
-          console.log(`Validated vector for chunk ${i}:`, {
-            type: typeof rawVector,
-            isArray: Array.isArray(rawVector),
-            length: rawVector.length,
-            sample: rawVector.slice(0, 5),
-            isValid: rawVector.every(val => typeof val === 'number' && !isNaN(val))
-          });
-          
           return {
             id: `source_${timestamp}_${name}_chunk${i}`,
-            values: rawVector,
+            values: result.embedding,
             metadata: {
               fileName: name,
               content: result.chunk,
@@ -200,12 +181,38 @@ export async function POST(request: NextRequest) {
           };
         });
 
-        // Batch upsert chunks for better performance
+        // Batch upload with validation
         const BATCH_SIZE = 100;
         for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
           const batch = chunks.slice(i, i + BATCH_SIZE);
-          await index.upsert(batch);
-          console.log(`[Pinecone] Stored chunks ${i + 1} to ${Math.min(i + BATCH_SIZE, chunks.length)}/${chunks.length}`);
+          
+          // Validate each vector in the batch
+          batch.forEach((chunk, idx) => {
+            if (!Array.isArray(chunk.values) || 
+                chunk.values.length !== 1536 ||
+                !chunk.values.every(v => typeof v === 'number' && !isNaN(v))) {
+              console.error('Invalid vector structure:', {
+                index: idx,
+                type: typeof chunk.values,
+                isArray: Array.isArray(chunk.values),
+                length: chunk.values?.length,
+                sample: Array.isArray(chunk.values) ? chunk.values.slice(0, 3) : null
+              });
+              throw new Error(`Invalid vector in batch at index ${idx}`);
+            }
+          });
+
+          try {
+            await index.upsert(batch);
+            console.log(`[Pinecone] Successfully stored batch ${i/BATCH_SIZE + 1}, chunks ${i + 1} to ${Math.min(i + BATCH_SIZE, chunks.length)}/${chunks.length}`);
+          } catch (error) {
+            console.error('[Pinecone] Upsert error:', {
+              error,
+              batchSize: batch.length,
+              sampleVector: batch[0]?.values.slice(0, 3)
+            });
+            throw error;
+          }
         }
 
         return { success: true, fileName: name };

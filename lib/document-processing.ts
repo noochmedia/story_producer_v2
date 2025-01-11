@@ -132,67 +132,46 @@ export async function generateEmbedding(text: string): Promise<Array<{chunk: str
       console.log(`Generating embedding for chunk ${index + 1}/${validChunks.length} (${chunk.length} chars)`);
       
       try {
-      const response = await openai.embeddings.create({
-        model: "text-embedding-ada-002",
-        input: chunk,
-      });
+        const response = await openai.embeddings.create({
+          model: "text-embedding-ada-002",
+          input: chunk,
+        });
 
-      // Log raw response
-      console.log('OpenAI embedding response:', {
-        hasData: !!response.data,
-        dataLength: response.data?.length,
-        firstItem: response.data?.[0] ? {
-          hasEmbedding: !!response.data[0].embedding,
-          embeddingType: typeof response.data[0].embedding,
-          isArray: Array.isArray(response.data[0].embedding),
-          constructor: response.data[0].embedding?.constructor?.name,
-          sample: Array.isArray(response.data[0].embedding) 
-            ? response.data[0].embedding.slice(0, 3) 
-            : 'not an array'
-        } : 'no first item'
-      });
-
-      if (!response.data?.[0]?.embedding) {
-        throw new Error(`Failed to generate embedding for chunk ${index + 1}`);
-      }
-
-      // Convert embedding to array of numbers
-      const rawEmbedding = response.data[0].embedding;
-      
-      // Log raw embedding before conversion
-      console.log('Raw embedding before conversion:', {
-        type: typeof rawEmbedding,
-        isArray: Array.isArray(rawEmbedding),
-        constructor: rawEmbedding?.constructor?.name,
-        sample: Array.isArray(rawEmbedding) 
-          ? rawEmbedding.slice(0, 3) 
-          : 'not an array'
-      });
-      const embedding = Array.from(rawEmbedding).map(val => {
-        const num = Number(val);
-        if (isNaN(num)) {
-          throw new Error(`Invalid embedding value in chunk ${index + 1}`);
+        if (!response.data?.[0]?.embedding) {
+          throw new Error(`Failed to generate embedding for chunk ${index + 1}`);
         }
-        return num;
-      });
-      
-      // Validate dimensions
-      if (embedding.length !== 1536) {
-        throw new Error(`Invalid embedding dimensions for chunk ${index + 1}: ${embedding.length}`);
-      }
 
-      console.log(`Successfully generated embedding for chunk ${index + 1}, first few values:`, embedding.slice(0, 3));
-      return {
-        chunk,
-        embedding
-      };
+        // Get the full embedding array and ensure it's properly formatted
+        const rawEmbedding = response.data[0].embedding;
+        const embedding = Array.isArray(rawEmbedding) 
+          ? rawEmbedding.map(Number)
+          : [];
+
+        // Validate the embedding
+        if (!Array.isArray(embedding) || 
+            embedding.length !== 1536 || 
+            !embedding.every(n => typeof n === 'number' && !isNaN(n))) {
+          console.error('Invalid embedding structure:', {
+            isArray: Array.isArray(embedding),
+            length: embedding.length,
+            sample: embedding.slice(0, 3)
+          });
+          throw new Error(`Invalid embedding format for chunk ${index + 1}`);
+        }
+
+        console.log(`Validated embedding for chunk ${index + 1}, dimension: ${embedding.length}, sample:`, embedding.slice(0, 3));
+        
+        return {
+          chunk,
+          embedding
+        };
       } catch (error) {
         console.error(`Error generating embedding for chunk ${index + 1}:`, error);
         throw error;
       }
     }));
 
-    return results.filter(Boolean); // Remove any undefined results
+    return results.filter(Boolean);
   } catch (error) {
     console.error("Error generating embeddings:", error);
     throw error;
