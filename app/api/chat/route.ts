@@ -1,8 +1,22 @@
 import { NextResponse } from 'next/server';
 import { OpenAI } from 'openai';
-import PineconeAssistant from '@/lib/pinecone-assistant';
+import { DocumentStore } from '@/lib/document-store';
 import { analyzeSourceCategories, processUserChoice } from '@/lib/interactive-search';
 import { AI_CONFIG } from '@/lib/ai-config';
+
+interface DocumentWithScore {
+  id: string;
+  metadata: {
+    fileName: string;
+    fileType: string;
+    type: string;
+    uploadedAt: string;
+    score?: number;
+    [key: string]: any;
+  };
+  score: number;
+  content: string;
+}
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -19,12 +33,6 @@ export async function POST(request: Request) {
       );
     }
 
-    // Initialize Pinecone Assistant
-    const assistant = new PineconeAssistant({
-      apiKey: process.env.PINECONE_API_KEY!,
-      indexName: process.env.PINECONE_INDEX!,
-      host: process.env.PINECONE_HOST!
-    });
 
     // Get the last user message
     const lastUserMessage = messages[messages.length - 1];
@@ -56,12 +64,32 @@ export async function POST(request: Request) {
             // Send initial stage marker
             controller.enqueue(encoder.encode('data: [STAGE: Analyzing source materials]\n\n'));
 
+            // Get document store instance
+            const store = DocumentStore.getInstance();
+
             // Search for relevant sources
-            const sources = await assistant.searchSimilar(lastUserMessage.content);
+            const sources = await store.searchSimilar(lastUserMessage.content, { type: 'source' });
+
+            if (!sources.length) {
+              controller.enqueue(encoder.encode('data: No relevant sources found. Please try a different query or check if sources have been uploaded.\n\n'));
+              return;
+            }
+
+            // Log found sources
+            console.log('Found sources:', sources.map(doc => ({
+              id: doc.id,
+              fileName: doc.metadata.fileName,
+              score: doc.metadata.score
+            })));
             
             // Analyze sources and stream response
             await analyzeSourceCategories(
-              sources.matches,
+              sources.map(doc => ({
+                id: doc.id,
+                metadata: doc.metadata,
+                score: doc.metadata.score || 0,
+                content: doc.content
+              })),
               lastUserMessage.content,
               openai,
               controller

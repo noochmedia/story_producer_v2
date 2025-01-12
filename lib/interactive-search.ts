@@ -1,25 +1,21 @@
-import { ScoredPineconeRecord } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
 import { AI_CONFIG } from './ai-config';
 
-interface SourceMetadata {
-  fileName?: string;
-  content?: string;
-  type?: string;
-  [key: string]: any;
-}
-
-type PineconeMatch = ScoredPineconeRecord<SourceMetadata>;
-
-interface SearchCategory {
-  category: string;
-  description: string;
-  sourceCount: number;
-  examples: string[];
+interface DocumentWithScore {
+  id: string;
+  metadata: {
+    fileName: string;
+    fileType: string;
+    type: string;
+    uploadedAt: string;
+    [key: string]: any;
+  };
+  score: number;
+  content: string;
 }
 
 export async function analyzeSourceCategories(
-  sources: PineconeMatch[],
+  sources: DocumentWithScore[],
   query: string,
   openai: OpenAI,
   controller: ReadableStreamDefaultController
@@ -30,7 +26,7 @@ export async function analyzeSourceCategories(
 
     // Combine content for analysis
     const allContent = sources
-      .map(source => source.metadata?.content || '')
+      .map(source => `[From ${source.metadata.fileName}]:\n${source.content}`)
       .join('\n\n');
 
     console.log('Combined content length:', allContent.length);
@@ -38,11 +34,11 @@ export async function analyzeSourceCategories(
 
     // First do an initial analysis of the query
     const initialResponse = await openai.chat.completions.create({
-    model: AI_CONFIG.model,
-    messages: [
-      {
-        role: 'system',
-        content: `You are analyzing interview transcripts to answer questions about: ${query}
+      model: AI_CONFIG.model,
+      messages: [
+        {
+          role: 'system',
+          content: `You are analyzing interview transcripts to answer questions about: ${query}
 
 Your task is to:
 1. First provide a direct answer based on the available information
@@ -55,41 +51,39 @@ Format your response with:
 - Supporting Quotes (2-3 relevant quotes)
 - Key Themes (list of themes found)
 - Potential Areas for Deeper Analysis`
-      },
-      {
-        role: 'user',
-        content: sources
-          .map(source => `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || ''}`)
-          .join('\n\n')
-      }
-    ],
-    temperature: 0.58,
-    max_tokens: 2000,
-    stream: true
-  });
+        },
+        {
+          role: 'user',
+          content: allContent
+        }
+      ],
+      temperature: 0.58,
+      max_tokens: 2000,
+      stream: true
+    });
 
     // Stream the initial analysis
     console.log('Streaming initial analysis');
     let initialAnalysis = '';
     for await (const chunk of initialResponse) {
-    const content = chunk.choices[0]?.delta?.content || '';
-    if (content) {
-      const formattedContent = content
-        .replace(/\.\s+/g, '.\n\n')
-        .replace(/:\s+/g, ':\n');
-      controller.enqueue(new TextEncoder().encode(formattedContent));
-      initialAnalysis += formattedContent;
+      const content = chunk.choices[0]?.delta?.content || '';
+      if (content) {
+        const formattedContent = content
+          .replace(/\.\s+/g, '.\n\n')
+          .replace(/:\s+/g, ':\n');
+        controller.enqueue(new TextEncoder().encode(formattedContent));
+        initialAnalysis += formattedContent;
+      }
     }
-  }
 
     console.log('Initial analysis complete, length:', initialAnalysis.length);
 
     // Add prompt for further exploration
     controller.enqueue(new TextEncoder().encode('\n\nWould you like to explore any specific aspect in more detail? You can:\n\n'));
-  controller.enqueue(new TextEncoder().encode('1. Get more details about a specific theme\n'));
-  controller.enqueue(new TextEncoder().encode('2. See how different perspectives compare\n'));
-  controller.enqueue(new TextEncoder().encode('3. Look at the timeline of events\n'));
-  controller.enqueue(new TextEncoder().encode('4. Focus on specific examples or quotes\n\n'));
+    controller.enqueue(new TextEncoder().encode('1. Get more details about a specific theme\n'));
+    controller.enqueue(new TextEncoder().encode('2. See how different perspectives compare\n'));
+    controller.enqueue(new TextEncoder().encode('3. Look at the timeline of events\n'));
+    controller.enqueue(new TextEncoder().encode('4. Focus on specific examples or quotes\n\n'));
 
     console.log('Analysis complete, returning result');
     return initialAnalysis;
@@ -103,7 +97,7 @@ Format your response with:
 
 export async function processUserChoice(
   choice: string,
-  sources: PineconeMatch[],
+  sources: DocumentWithScore[],
   previousAnalysis: string,
   openai: OpenAI,
   controller: ReadableStreamDefaultController
@@ -136,7 +130,7 @@ Format your response with:
       {
         role: 'user',
         content: sources
-          .map(source => `[From ${source.metadata?.fileName || 'Unknown'}]:\n${source.metadata?.content || ''}`)
+          .map(source => `[From ${source.metadata.fileName}]:\n${source.content}`)
           .join('\n\n')
       }
     ],

@@ -1,10 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { put } from '@vercel/blob'
-import { Buffer } from 'buffer'
-import { PineconeAssistant } from '../../../lib/pinecone-assistant'
-import { generateEmbedding, processDocument } from '../../../lib/document-processing'
+import { NextRequest, NextResponse } from 'next/server';
+import { put } from '@vercel/blob';
+import { Buffer } from 'buffer';
+import { DocumentStore } from '../../../lib/document-store';
 
-// Type definitions
+// Maximum file size (100MB)
+const MAX_FILE_SIZE = 100 * 1024 * 1024;
+const MAX_FILES = 50;
+
 interface ProcessedFile {
   text: string;
   name: string;
@@ -20,12 +22,8 @@ interface UploadResult {
   error?: string;
 }
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
-
-// Maximum file size (100MB)
-const MAX_FILE_SIZE = 100 * 1024 * 1024;
-const MAX_FILES = 50;
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
 
 async function processFile(file: File): Promise<ProcessedFile> {
   // Validate file size
@@ -90,15 +88,6 @@ export async function POST(request: NextRequest) {
     if (!process.env.OPENAI_API_KEY) {
       throw new Error('OPENAI_API_KEY environment variable is not set');
     }
-    if (!process.env.PINECONE_API_KEY) {
-      throw new Error('PINECONE_API_KEY environment variable is not set');
-    }
-    if (!process.env.PINECONE_INDEX) {
-      throw new Error('PINECONE_INDEX environment variable is not set');
-    }
-    if (!process.env.PINECONE_HOST) {
-      throw new Error('PINECONE_HOST environment variable is not set');
-    }
 
     // Get form data
     const formData = await request.formData();
@@ -132,12 +121,8 @@ export async function POST(request: NextRequest) {
       size: file.size
     })));
 
-    // Initialize Pinecone Assistant
-    const assistant = new PineconeAssistant({
-      apiKey: process.env.PINECONE_API_KEY,
-      indexName: process.env.PINECONE_INDEX,
-      host: process.env.PINECONE_HOST
-    });
+    // Get document store instance
+    const store = DocumentStore.getInstance();
 
     // Process each file
     const results: UploadResult[] = await Promise.all(files.map(async (file: File) => {
@@ -148,14 +133,8 @@ export async function POST(request: NextRequest) {
           throw new Error(`No content extracted from ${name}`);
         }
 
-        // Process the document
-        const processedText = await processDocument(text);
-        
-        // Generate embedding
-        const embedding = await assistant.generateEmbedding(processedText);
-
-        // Upload to Pinecone with full content
-        const result = await assistant.uploadDocument(processedText, {
+        // Add document to store
+        const document = await store.addDocument(text, {
           fileName: name,
           fileType: file.type || 'text/plain',
           type: 'source',
@@ -165,22 +144,26 @@ export async function POST(request: NextRequest) {
             filePath: blob.pathname,
             hasBlob: true
           })
-        }, embedding);
+        });
 
-        // Verify the upload
-        const verifyQuery = await assistant.searchSimilar(processedText, {
-          type: 'source'
-        }, 1);
-
-        console.log('Verification query results:', {
-          matchesFound: verifyQuery.matches.length,
-          firstMatch: verifyQuery.matches[0] ? {
-            score: verifyQuery.matches[0].score,
-            metadata: verifyQuery.matches[0].metadata
+        // Verify the document was added
+        const verifyResults = await store.searchSimilar(text, { type: 'source' }, 1);
+        console.log('Verification results:', {
+          found: verifyResults.length > 0,
+          firstMatch: verifyResults[0] ? {
+            id: verifyResults[0].id,
+            fileName: verifyResults[0].metadata.fileName
           } : 'No matches'
         });
 
-        console.log(`Successfully processed ${name}:`, result);
+        // Export documents to persist them
+        const exportData = store.exportDocuments();
+        console.log('Documents exported:', {
+          dataLength: exportData.length,
+          documentCount: store.getDocuments().length
+        });
+
+        console.log(`Successfully processed ${name}:`, document);
         return { success: true, fileName: name };
       } catch (error) {
         console.error(`Error processing file ${file.name}:`, error);
