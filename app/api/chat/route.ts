@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server';
 import { OpenAI } from 'openai';
 import PineconeAssistant from '@/lib/pinecone-assistant';
+import { analyzeSourceCategories, processUserChoice } from '@/lib/interactive-search';
+import { AI_CONFIG } from '@/lib/ai-config';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -27,53 +29,57 @@ export async function POST(request: Request) {
     // Get the last user message
     const lastUserMessage = messages[messages.length - 1];
 
-    // Build system prompt based on mode
-    let systemPrompt = `You are a helpful AI assistant with expertise in documentary storytelling and narrative structure.`;
-    
-    if (projectDetails) {
-      systemPrompt += `\n\nProject Context: ${projectDetails}`;
-    }
+    // Create readable stream for response
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          if (deepDive) {
+            // Search for relevant sources
+            const sources = await assistant.searchSimilar(lastUserMessage.content);
+            
+            // Analyze sources and stream response
+            await analyzeSourceCategories(
+              sources.matches,
+              lastUserMessage.content,
+              openai,
+              controller
+            );
+          } else {
+            // Regular chat mode
+            const completion = await openai.chat.completions.create({
+              model: AI_CONFIG.model,
+              temperature: AI_CONFIG.temperature,
+              max_tokens: AI_CONFIG.max_tokens,
+              messages: [
+                { role: 'system', content: AI_CONFIG.systemPrompt },
+                ...messages
+              ],
+              stream: true
+            });
 
-    if (deepDive) {
-      systemPrompt += `\n\nYou have access to source materials and can provide detailed, source-based responses.`;
-    }
-
-    if (isSoundbiteRequest) {
-      systemPrompt += `\n\nYou specialize in identifying and crafting compelling soundbites that capture key themes and moments.`;
-    }
-
-    // Prepare messages with system prompt
-    const fullMessages = [
-      { role: 'system', content: systemPrompt },
-      ...messages
-    ];
-
-    // Get chat completion
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
-      messages: fullMessages,
-      stream: false
+            // Stream the response
+            const encoder = new TextEncoder();
+            for await (const chunk of completion) {
+              if (chunk.choices[0]?.delta?.content) {
+                controller.enqueue(encoder.encode(chunk.choices[0].delta.content));
+              }
+            }
+          }
+          controller.close();
+        } catch (error) {
+          console.error('Streaming error:', error);
+          controller.error(error);
+        }
+      }
     });
 
-    const response = completion.choices[0].message;
-
-    // If in deep dive mode, store the interaction
-    if (deepDive) {
-      try {
-        await assistant.uploadDocument(
-          `Q: ${lastUserMessage.content}\nA: ${response.content}`,
-          {
-            type: 'conversation',
-            timestamp: new Date().toISOString()
-          }
-        );
-      } catch (error) {
-        console.error('Error storing conversation:', error);
-        // Don't throw - we want the chat to continue even if storage fails
-      }
-    }
-
-    return new Response(response.content);
+    return new Response(stream, {
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
+    });
 
   } catch (error) {
     console.error("Error:", error);
