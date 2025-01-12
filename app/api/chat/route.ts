@@ -29,17 +29,35 @@ export async function POST(request: Request) {
     // Get the last user message
     const lastUserMessage = messages[messages.length - 1];
 
-    // Build system prompt with project context
-    const systemPrompt = `${AI_CONFIG.systemPrompt}\n\nProject Context: ${projectDetails || 'No project details provided yet.'}`;
+    // Build system prompt based on mode and project context
+    let systemPrompt = AI_CONFIG.systemPrompt;
+
+    // Add project context if available
+    if (projectDetails) {
+      systemPrompt += `\n\nProject Context: ${projectDetails}`;
+    }
+
+    // Add mode-specific instructions
+    if (deepDive) {
+      systemPrompt += `\n\nYou are in Deep Dive mode. Analyze source materials thoroughly and provide detailed, evidence-based responses.`;
+    }
+
+    if (isSoundbiteRequest) {
+      systemPrompt += `\n\nYou are in Soundbite mode. Focus on identifying or crafting compelling, concise quotes that capture key themes and moments.`;
+    }
 
     // Create readable stream for response
     const stream = new ReadableStream({
       async start(controller) {
+        const encoder = new TextEncoder();
+        
         try {
           if (deepDive) {
-            // Search for relevant sources with project context
-            const searchQuery = `${projectDetails ? 'Project: ' + projectDetails + '\n\n' : ''}Query: ${lastUserMessage.content}`;
-            const sources = await assistant.searchSimilar(searchQuery);
+            // Send initial stage marker
+            controller.enqueue(encoder.encode('data: [STAGE: Analyzing source materials]\n\n'));
+
+            // Search for relevant sources
+            const sources = await assistant.searchSimilar(lastUserMessage.content);
             
             // Analyze sources and stream response
             await analyzeSourceCategories(
@@ -50,6 +68,8 @@ export async function POST(request: Request) {
             );
           } else {
             // Regular chat mode
+            controller.enqueue(encoder.encode('data: [STAGE: Processing request]\n\n'));
+
             const completion = await openai.chat.completions.create({
               model: AI_CONFIG.model,
               temperature: AI_CONFIG.temperature,
@@ -62,13 +82,15 @@ export async function POST(request: Request) {
             });
 
             // Stream the response
-            const encoder = new TextEncoder();
             for await (const chunk of completion) {
               if (chunk.choices[0]?.delta?.content) {
-                controller.enqueue(encoder.encode(chunk.choices[0].delta.content));
+                controller.enqueue(encoder.encode(`data: ${chunk.choices[0].delta.content}\n\n`));
               }
             }
           }
+
+          // Send completion marker
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
           controller.close();
         } catch (error) {
           console.error('Streaming error:', error);
