@@ -36,33 +36,57 @@ export class DocumentStore {
   }
 
   private async loadDocuments() {
-    if (this.initialized) return;
+    if (this.initialized) {
+      console.log('[DocumentStore] Already initialized with', this.documents.length, 'documents');
+      return;
+    }
 
     try {
+      console.log('[DocumentStore] Starting document load...');
+
       // Ensure embeddings are initialized
       if (!this.embeddings) {
+        console.log('[DocumentStore] Initializing embeddings...');
         this.embeddings = await VercelEmbeddings.getInstance();
       }
 
       // List all blobs with our index prefix
+      console.log('[DocumentStore] Listing blobs...');
       const { blobs } = await list({ prefix: 'documents/' });
+      console.log('[DocumentStore] Found', blobs.length, 'blobs');
       
       // Load each document's metadata and embedding
       const loadPromises = blobs.map(async blob => {
         try {
+          console.log('[DocumentStore] Loading document from:', blob.url);
           const response = await fetch(blob.url);
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
           const doc = await response.json() as Document;
+          console.log('[DocumentStore] Successfully loaded document:', {
+            id: doc.id,
+            contentLength: doc.content?.length || 0,
+            hasContent: !!doc.content
+          });
           return doc;
         } catch (error) {
-          console.error(`Error loading document from ${blob.url}:`, error);
+          console.error(`[DocumentStore] Error loading document from ${blob.url}:`, error);
           return null;
         }
       });
 
       const docs = await Promise.all(loadPromises);
-      this.documents = docs.filter((doc): doc is Document => doc !== null);
+      this.documents = docs.filter((doc): doc is Document => {
+        if (!doc) return false;
+        if (!doc.content) {
+          console.error('[DocumentStore] Document missing content:', doc.id);
+          return false;
+        }
+        return true;
+      });
       
-      console.log(`Loaded ${this.documents.length} documents from Blob storage`);
+      console.log('[DocumentStore] Successfully loaded', this.documents.length, 'documents from Blob storage');
       this.initialized = true;
     } catch (error) {
       console.error('Error loading documents:', error);
@@ -209,16 +233,43 @@ export class DocumentStore {
   }
 
   async getDocuments(filter?: Partial<Document['metadata']>): Promise<Document[]> {
-    // Ensure documents are loaded
-    await this.loadDocuments();
+    try {
+      console.log('[DocumentStore] Getting documents with filter:', filter);
+      
+      // Ensure documents are loaded
+      await this.loadDocuments();
+      console.log('[DocumentStore] Documents loaded:', this.documents.length);
 
-    if (!filter) return this.documents;
+      if (!filter) {
+        console.log('[DocumentStore] No filter applied, returning all documents');
+        return this.documents;
+      }
 
-    return this.documents.filter(doc =>
-      Object.entries(filter).every(([key, value]) =>
-        doc.metadata[key] === value
-      )
-    );
+      const filteredDocs = this.documents.filter(doc => {
+        const matches = Object.entries(filter).every(([key, value]) =>
+          doc.metadata[key] === value
+        );
+        if (!matches) {
+          console.log('[DocumentStore] Document did not match filter:', {
+            id: doc.id,
+            metadata: doc.metadata,
+            filter
+          });
+        }
+        return matches;
+      });
+
+      console.log('[DocumentStore] Filtered documents:', {
+        total: this.documents.length,
+        filtered: filteredDocs.length,
+        filter
+      });
+
+      return filteredDocs;
+    } catch (error) {
+      console.error('[DocumentStore] Error getting documents:', error);
+      throw error;
+    }
   }
 
   async deleteDocument(id: string): Promise<boolean> {
