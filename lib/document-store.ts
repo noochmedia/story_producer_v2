@@ -1,8 +1,7 @@
 import { VercelEmbeddings } from './vercel-embeddings';
-import fs from 'fs';
-import path from 'path';
+import { kv } from '@vercel/kv';
 
-interface Document {
+export interface Document {
   id: string;
   content: string;
   embedding: number[];
@@ -19,11 +18,10 @@ export class DocumentStore {
   private static instance: DocumentStore;
   private documents: Document[] = [];
   private embeddings: VercelEmbeddings;
-  private storePath: string;
+  private readonly DOCUMENTS_KEY = 'documents';
 
   private constructor() {
     this.embeddings = VercelEmbeddings.getInstance();
-    this.storePath = path.join(process.cwd(), 'data', 'documents.json');
     this.loadDocuments();
   }
 
@@ -34,19 +32,13 @@ export class DocumentStore {
     return this.instance;
   }
 
-  private loadDocuments() {
+  private async loadDocuments() {
     try {
-      // Ensure data directory exists
-      const dataDir = path.join(process.cwd(), 'data');
-      if (!fs.existsSync(dataDir)) {
-        fs.mkdirSync(dataDir, { recursive: true });
-      }
-
-      // Load documents if file exists
-      if (fs.existsSync(this.storePath)) {
-        const data = fs.readFileSync(this.storePath, 'utf-8');
-        this.documents = JSON.parse(data);
-        console.log(`Loaded ${this.documents.length} documents from storage`);
+      // Load documents from KV store
+      const documents = await kv.get<Document[]>(this.DOCUMENTS_KEY);
+      if (documents) {
+        this.documents = documents;
+        console.log(`Loaded ${this.documents.length} documents from KV store`);
       } else {
         console.log('No existing documents found');
         this.documents = [];
@@ -57,10 +49,10 @@ export class DocumentStore {
     }
   }
 
-  private saveDocuments() {
+  private async saveDocuments() {
     try {
-      fs.writeFileSync(this.storePath, JSON.stringify(this.documents, null, 2));
-      console.log(`Saved ${this.documents.length} documents to storage`);
+      await kv.set(this.DOCUMENTS_KEY, this.documents);
+      console.log(`Saved ${this.documents.length} documents to KV store`);
     } catch (error) {
       console.error('Error saving documents:', error);
       throw error;
@@ -86,8 +78,8 @@ export class DocumentStore {
       // Store the document
       this.documents.push(document);
 
-      // Save to disk
-      this.saveDocuments();
+      // Save to KV store
+      await this.saveDocuments();
 
       return document;
     } catch (error) {
@@ -98,6 +90,11 @@ export class DocumentStore {
 
   async searchSimilar(query: string, filter?: Partial<Document['metadata']>, topK: number = 5): Promise<Document[]> {
     try {
+      // Ensure documents are loaded
+      if (this.documents.length === 0) {
+        await this.loadDocuments();
+      }
+
       // Filter documents if filter provided
       let filteredDocs = this.documents;
       if (filter) {
@@ -136,7 +133,12 @@ export class DocumentStore {
     }
   }
 
-  getDocuments(filter?: Partial<Document['metadata']>): Document[] {
+  async getDocuments(filter?: Partial<Document['metadata']>): Promise<Document[]> {
+    // Ensure documents are loaded
+    if (this.documents.length === 0) {
+      await this.loadDocuments();
+    }
+
     if (!filter) return this.documents;
 
     return this.documents.filter(doc =>
@@ -146,16 +148,16 @@ export class DocumentStore {
     );
   }
 
-  deleteDocument(id: string): boolean {
+  async deleteDocument(id: string): Promise<boolean> {
     const index = this.documents.findIndex(doc => doc.id === id);
     if (index === -1) return false;
 
     this.documents.splice(index, 1);
-    this.saveDocuments();
+    await this.saveDocuments();
     return true;
   }
 
-  deleteDocuments(filter: Partial<Document['metadata']>): number {
+  async deleteDocuments(filter: Partial<Document['metadata']>): Promise<number> {
     const initialLength = this.documents.length;
     this.documents = this.documents.filter(doc =>
       !Object.entries(filter).every(([key, value]) =>
@@ -164,7 +166,7 @@ export class DocumentStore {
     );
     const deletedCount = initialLength - this.documents.length;
     if (deletedCount > 0) {
-      this.saveDocuments();
+      await this.saveDocuments();
     }
     return deletedCount;
   }
@@ -174,14 +176,14 @@ export class DocumentStore {
     return JSON.stringify(this.documents, null, 2);
   }
 
-  importDocuments(jsonData: string) {
+  async importDocuments(jsonData: string) {
     try {
       const documents = JSON.parse(jsonData);
       if (!Array.isArray(documents)) {
         throw new Error('Invalid document data');
       }
       this.documents = documents;
-      this.saveDocuments();
+      await this.saveDocuments();
     } catch (error) {
       console.error('Error importing documents:', error);
       throw error;

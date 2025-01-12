@@ -64,36 +64,37 @@ export async function POST(request: Request) {
             // Send initial stage marker
             controller.enqueue(encoder.encode('data: [STAGE: Analyzing source materials]\n\n'));
 
-            // Get document store instance
-            const store = DocumentStore.getInstance();
+            try {
+              // Get document store instance
+              const store = DocumentStore.getInstance();
 
-            // Search for relevant sources
-            const sources = await store.searchSimilar(lastUserMessage.content, { type: 'source' });
+              // Search for relevant sources
+              const sources = await store.searchSimilar(lastUserMessage.content, { type: 'source' });
 
-            if (!sources.length) {
-              controller.enqueue(encoder.encode('data: No relevant sources found. Please try a different query or check if sources have been uploaded.\n\n'));
+              if (!sources.length) {
+                controller.enqueue(encoder.encode('data: No relevant sources found. Please try a different query or check if sources have been uploaded.\n\n'));
+                return;
+              }
+
+              // Log found sources
+              console.log('Found sources:', sources.map(doc => ({
+                id: doc.id,
+                fileName: doc.metadata.fileName,
+                score: doc.metadata.score
+              })));
+              
+              // Analyze sources and stream response
+              await analyzeSourceCategories(
+                sources,
+                lastUserMessage.content,
+                openai,
+                controller
+              );
+            } catch (error) {
+              console.error('Error in deep dive mode:', error);
+              controller.enqueue(encoder.encode(`data: Error analyzing sources: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.\n\n`));
               return;
             }
-
-            // Log found sources
-            console.log('Found sources:', sources.map(doc => ({
-              id: doc.id,
-              fileName: doc.metadata.fileName,
-              score: doc.metadata.score
-            })));
-            
-            // Analyze sources and stream response
-            await analyzeSourceCategories(
-              sources.map(doc => ({
-                id: doc.id,
-                metadata: doc.metadata,
-                score: doc.metadata.score || 0,
-                content: doc.content
-              })),
-              lastUserMessage.content,
-              openai,
-              controller
-            );
           } else {
             // Regular chat mode
             controller.enqueue(encoder.encode('data: [STAGE: Processing request]\n\n'));

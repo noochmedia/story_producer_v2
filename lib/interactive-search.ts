@@ -1,21 +1,9 @@
 import OpenAI from 'openai';
 import { AI_CONFIG } from './ai-config';
-
-interface DocumentWithScore {
-  id: string;
-  metadata: {
-    fileName: string;
-    fileType: string;
-    type: string;
-    uploadedAt: string;
-    [key: string]: any;
-  };
-  score: number;
-  content: string;
-}
+import { Document } from './document-store';
 
 export async function analyzeSourceCategories(
-  sources: DocumentWithScore[],
+  sources: Document[],
   query: string,
   openai: OpenAI,
   controller: ReadableStreamDefaultController
@@ -97,7 +85,7 @@ Format your response with:
 
 export async function processUserChoice(
   choice: string,
-  sources: DocumentWithScore[],
+  sources: Document[],
   previousAnalysis: string,
   openai: OpenAI,
   controller: ReadableStreamDefaultController
