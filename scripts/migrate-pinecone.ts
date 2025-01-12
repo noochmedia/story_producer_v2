@@ -13,12 +13,12 @@ async function migratePineconeData() {
   const oldIndex = new Pinecone({ apiKey }).index('story-tools-embedding2-sj0uqym');
   const assistant = new PineconeAssistant({
     apiKey,
-    indexName: 'storytools-embedding-3-sj0uqym',
+    indexName: 'story-producer-ada-002',
     host,
   });
 
   const queryResponse = await oldIndex.query({
-    vector: Array(1024).fill(0), // Corrected vector dimensions
+    vector: Array(1536).fill(0), // Updated vector dimensions
     topK: 10000,
     includeMetadata: true,
   });

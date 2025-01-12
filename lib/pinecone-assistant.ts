@@ -52,6 +52,13 @@ export class PineconeAssistant {
         },
       }));
 
+      // Validate vector dimensions
+      vectors.forEach(vector => {
+        if (vector.values.length !== 1536) {
+          throw new Error(`Invalid vector dimensions: expected 1536, got ${vector.values.length}`);
+        }
+      });
+
       const BATCH_SIZE = 100;
       for (let i = 0; i < vectors.length; i += BATCH_SIZE) {
         const batch = vectors.slice(i, i + BATCH_SIZE);

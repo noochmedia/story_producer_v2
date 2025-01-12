@@ -9,13 +9,15 @@ export async function GET() {
       host: process.env.PINECONE_HOST!, // Explicitly include host
     });
 
-    const index = pinecone.index(process.env.PINECONE_INDEX || 'storytools-embedding-3');
+    const index = pinecone.index(process.env.PINECONE_INDEX || 'story-producer-ada-002');
 
-    const vector = Array(1024).fill(0);
+    const vector = Array(1536).fill(0);
 
     const queryResponse = await index.query({
       vector,
       topK: 1,
+      namespace: 'default-namespace', // Add namespace
+      filter: { genre: { $eq: "action" } }, // Example filter
     });
 
     return NextResponse.json({
