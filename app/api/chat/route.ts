@@ -14,48 +14,16 @@ async function generateEmbedding(text: string) {
   return response.data[0].embedding;
 }
 
-export async function OPTIONS(request: Request) {
-  return new NextResponse(null, {
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
-  });
-}
-
 export async function POST(request: Request) {
-  // Add CORS headers
-  const headers = {
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
-  };
-
-  // Handle preflight request
-  if (request.method === 'OPTIONS') {
-    return new NextResponse(null, { headers });
-  }
-
   try {
-    let body;
-    try {
-      body = await request.json();
-    } catch (e) {
+    const { text } = await request.json();
+    
+    if (!text) {
       return NextResponse.json(
-        { error: "Invalid JSON in request body" },
-        { status: 400, headers }
+        { error: "Text is required" },
+        { status: 400 }
       );
     }
-
-    if (!body || typeof body.text !== 'string' || !body.text.trim()) {
-      return NextResponse.json(
-        { error: "Text field is required and must be a non-empty string" },
-        { status: 400, headers }
-      );
-    }
-
-    const text = body.text.trim();
 
     if (!process.env.PINECONE_INDEX) {
       throw new Error('PINECONE_INDEX is not set');
@@ -70,12 +38,12 @@ export async function POST(request: Request) {
       metadata: { text }
     }]);
 
-    return NextResponse.json({ success: true }, { headers });
+    return NextResponse.json({ success: true });
   } catch (error) {
     console.error("Error:", error);
     return NextResponse.json(
-      { error: "Failed to process request", details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500, headers }
+      { error: "Failed to process request" },
+      { status: 500 }
     );
   }
 }
