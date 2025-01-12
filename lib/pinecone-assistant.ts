@@ -1,25 +1,50 @@
 import { Pinecone } from "@pinecone-database/pinecone";
-import { OpenAI } from 'openai';
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
 
 export class PineconeAssistant {
   private pinecone: Pinecone;
   private indexName: string;
+  private host: string;
+  private apiKey: string;
 
   constructor({ apiKey, indexName, host }: { apiKey: string; indexName: string; host: string }) {
     this.pinecone = new Pinecone({ apiKey });
     this.indexName = indexName;
+    this.host = host;
+    this.apiKey = apiKey;
   }
 
   async generateEmbedding(text: string) {
-    const response = await openai.embeddings.create({
-      model: "text-embedding-ada-002",
-      input: text,
+    // Extract the base URL without the protocol
+    const baseUrl = this.host.replace(/^https?:\/\//, '');
+    
+    const response = await fetch(`https://${baseUrl}/vectors/embed`, {
+      method: 'POST',
+      headers: {
+        'Api-Key': this.apiKey,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'multilingual-e5-large',
+        inputs: [text],
+        parameters: {
+          input_type: 'passage',
+          truncate: 'END'
+        }
+      })
     });
-    return response.data[0].embedding;
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Pinecone API Error:', {
+        status: response.status,
+        statusText: response.statusText,
+        error: errorText
+      });
+      throw new Error(`Pinecone embedding API error: ${response.statusText} - ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data.embeddings[0];
   }
 
   async uploadDocument(content: string, metadata: Record<string, any>) {
