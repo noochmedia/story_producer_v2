@@ -32,7 +32,14 @@ An AI-powered tool for analyzing source materials, extracting insights, and cond
   - Environment setup
   - Development
   - Deployment
-  - Troubleshooting
+  - Configuration
+
+### For Support
+- [Troubleshooting Guide](docs/TROUBLESHOOTING.md) - Common issues and solutions
+  - Known issues
+  - Error handling
+  - Recovery procedures
+  - Debugging steps
 
 ## Quick Start
 
