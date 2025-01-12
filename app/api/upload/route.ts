@@ -148,26 +148,37 @@ export async function POST(request: NextRequest) {
           throw new Error(`No content extracted from ${name}`);
         }
 
-        // Process and chunk the document
+        // Process the document
         const processedText = await processDocument(text);
-        const chunks = await generateEmbedding(processedText);
+        
+        // Generate embedding
+        const embedding = await assistant.generateEmbedding(processedText);
 
-        // Upload each chunk
-        for (const { chunk, embedding } of chunks) {
-          await assistant.uploadDocument(chunk, {
-            fileName: name,
-            fileType: file.type || 'text/plain',
-            type: 'source',
-            uploadedAt: new Date().toISOString(),
-            ...(blob && {
-              fileUrl: blob.url,
-              filePath: blob.pathname,
-              hasBlob: true
-            })
-          }, embedding);
-        }
+        // Upload to Pinecone with full content
+        const result = await assistant.uploadDocument(processedText, {
+          fileName: name,
+          fileType: file.type || 'text/plain',
+          type: 'source',
+          uploadedAt: new Date().toISOString(),
+          ...(blob && {
+            fileUrl: blob.url,
+            filePath: blob.pathname,
+            hasBlob: true
+          })
+        }, embedding);
 
-        const result = { success: true };
+        // Verify the upload
+        const verifyQuery = await assistant.searchSimilar(processedText, {
+          type: 'source'
+        }, 1);
+
+        console.log('Verification query results:', {
+          matchesFound: verifyQuery.matches.length,
+          firstMatch: verifyQuery.matches[0] ? {
+            score: verifyQuery.matches[0].score,
+            metadata: verifyQuery.matches[0].metadata
+          } : 'No matches'
+        });
 
         console.log(`Successfully processed ${name}:`, result);
         return { success: true, fileName: name };
