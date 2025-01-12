@@ -47,14 +47,15 @@ export class PineconeAssistant {
     return data.embeddings[0];
   }
 
-  async uploadDocument(content: string, metadata: Record<string, any>) {
+  async uploadDocument(content: string, metadata: Record<string, any>, embedding?: number[]) {
     try {
-      const embedding = await this.generateEmbedding(content);
+      // If no embedding provided, generate one
+      const vectorEmbedding = embedding || await this.generateEmbedding(content);
       const index = this.pinecone.index(this.indexName);
       
       await index.upsert([{
         id: Date.now().toString(),
-        values: embedding,
+        values: vectorEmbedding,
         metadata: {
           content,
           ...metadata

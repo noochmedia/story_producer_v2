@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { put } from '@vercel/blob'
 import { Buffer } from 'buffer'
 import { PineconeAssistant } from '../../../lib/pinecone-assistant'
+import { generateEmbedding, processDocument } from '../../../lib/document-processing'
 
 // Type definitions
 interface ProcessedFile {
@@ -147,18 +148,26 @@ export async function POST(request: NextRequest) {
           throw new Error(`No content extracted from ${name}`);
         }
 
-        // Upload document using Pinecone Assistant
-        const result = await assistant.uploadDocument(text, {
-          fileName: name,
-          fileType: file.type || 'text/plain',
-          type: 'source',
-          uploadedAt: new Date().toISOString(),
-          ...(blob && {
-            fileUrl: blob.url,
-            filePath: blob.pathname,
-            hasBlob: true
-          })
-        });
+        // Process and chunk the document
+        const processedText = await processDocument(text);
+        const chunks = await generateEmbedding(processedText);
+
+        // Upload each chunk
+        for (const { chunk, embedding } of chunks) {
+          await assistant.uploadDocument(chunk, {
+            fileName: name,
+            fileType: file.type || 'text/plain',
+            type: 'source',
+            uploadedAt: new Date().toISOString(),
+            ...(blob && {
+              fileUrl: blob.url,
+              filePath: blob.pathname,
+              hasBlob: true
+            })
+          }, embedding);
+        }
+
+        const result = { success: true };
 
         console.log(`Successfully processed ${name}:`, result);
         return { success: true, fileName: name };
