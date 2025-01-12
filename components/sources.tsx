@@ -11,8 +11,7 @@ interface Source {
   id: string;
   name: string;
   type: string;
-  url: string;
-  content: string;
+  url?: string;
   uploadedAt?: string;
 }
 
@@ -28,10 +27,10 @@ export function Sources() {
   const { toast } = useToast()
 
   const handleView = async (source: Source) => {
-    if (!source.url) {
+    if (!source.id) {
       toast({
         title: "Error",
-        description: "Source URL not available",
+        description: "Source ID not available",
         variant: "destructive",
       })
       return
@@ -40,7 +39,7 @@ export function Sources() {
     try {
       setViewingSource(source)
       setIsLoadingContent(true)
-      const response = await fetch(`/api/sources/view?url=${encodeURIComponent(source.url)}`)
+      const response = await fetch(`/api/sources/view?id=${encodeURIComponent(source.id)}`)
       if (!response.ok) {
         throw new Error('Failed to fetch source content')
       }
