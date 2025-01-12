@@ -1,22 +1,9 @@
 import { NextResponse } from 'next/server';
 import { OpenAI } from 'openai';
-import { DocumentStore } from '@/lib/document-store';
+import { DocumentStore, Document } from '@/lib/document-store';
 import { analyzeSourceCategories, processUserChoice } from '@/lib/interactive-search';
 import { AI_CONFIG } from '@/lib/ai-config';
 
-interface DocumentWithScore {
-  id: string;
-  metadata: {
-    fileName: string;
-    fileType: string;
-    type: string;
-    uploadedAt: string;
-    score?: number;
-    [key: string]: any;
-  };
-  score: number;
-  content: string;
-}
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -66,12 +53,25 @@ export async function POST(request: Request) {
 
             try {
               // Get document store instance
-              const store = DocumentStore.getInstance();
+              console.log('Getting document store instance...');
+              const store = await DocumentStore.getInstance();
+              console.log('Document store initialized:', {
+                hasEmbeddings: store !== null,
+                hasSearchSimilar: typeof store.searchSimilar === 'function'
+              });
+
+              // Ensure we have the OpenAI API key
+              if (!process.env.OPENAI_API_KEY) {
+                throw new Error('OpenAI API key not configured');
+              }
 
               // Search for relevant sources
+              console.log('Searching for relevant sources...');
               const sources = await store.searchSimilar(lastUserMessage.content, { type: 'source' });
+              console.log('Search completed successfully');
 
               if (!sources.length) {
+                console.log('No relevant sources found');
                 controller.enqueue(encoder.encode('data: No relevant sources found. Please try a different query or check if sources have been uploaded.\n\n'));
                 return;
               }
@@ -80,18 +80,25 @@ export async function POST(request: Request) {
               console.log('Found sources:', sources.map(doc => ({
                 id: doc.id,
                 fileName: doc.metadata.fileName,
-                score: doc.metadata.score
+                score: doc.metadata.score,
+                contentPreview: doc.content.substring(0, 100) + '...'
               })));
               
               // Analyze sources and stream response
+              console.log('Starting source analysis...');
               await analyzeSourceCategories(
                 sources,
                 lastUserMessage.content,
                 openai,
                 controller
               );
+              console.log('Source analysis complete');
             } catch (error) {
-              console.error('Error in deep dive mode:', error);
+              console.error('Error in deep dive mode:', {
+                error,
+                message: error instanceof Error ? error.message : 'Unknown error',
+                stack: error instanceof Error ? error.stack : undefined
+              });
               controller.enqueue(encoder.encode(`data: Error analyzing sources: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.\n\n`));
               return;
             }
