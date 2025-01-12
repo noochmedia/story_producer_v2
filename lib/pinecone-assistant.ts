@@ -1,12 +1,15 @@
-import { PineconeClient } from "@pinecone-database/pinecone";
+import { Pinecone } from "@pinecone-database/pinecone";
 
-const pinecone = new PineconeClient();
-
-async function initPinecone() {
-  await pinecone.init({
-    apiKey: process.env.PINECONE_API_KEY,
-    environment: process.env.PINECONE_ENVIRONMENT, // e.g., "us-east1-aws"
-  });
+if (!process.env.PINECONE_API_KEY) {
+  throw new Error('PINECONE_API_KEY is not set');
 }
+
+if (!process.env.PINECONE_HOST) {
+  throw new Error('PINECONE_HOST is not set');
+}
+
+const pinecone = new Pinecone({
+  apiKey: process.env.PINECONE_API_KEY
+});
 
 export default pinecone;

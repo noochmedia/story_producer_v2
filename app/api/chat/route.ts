@@ -1,19 +1,49 @@
-import pinecone from "../../lib/pinecone-assistant";
+import { NextResponse } from 'next/server';
+import pinecone from "@/lib/pinecone-assistant";
+import { OpenAI } from 'openai';
 
-export default async function handler(req, res) {
-  if (req.method === "POST") {
-    const { text } = req.body;
-    const index = pinecone.Index(process.env.PINECONE_INDEX); // Ensure this matches your environment variable
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+});
 
-    try {
-      const embedding = await generateEmbedding(text); // Assuming you have a function to generate embeddings
-      await index.upsert([{ id: "unique-id", values: embedding }]);
-      res.status(200).json({ success: true });
-    } catch (error) {
-      console.error("Error:", error);
-      res.status(500).json({ error: "Failed to upsert embedding" });
+async function generateEmbedding(text: string) {
+  const response = await openai.embeddings.create({
+    model: "text-embedding-ada-002",
+    input: text,
+  });
+  return response.data[0].embedding;
+}
+
+export async function POST(request: Request) {
+  try {
+    const { text } = await request.json();
+    
+    if (!text) {
+      return NextResponse.json(
+        { error: "Text is required" },
+        { status: 400 }
+      );
     }
-  } else {
-    res.status(405).json({ error: "Method not allowed" });
+
+    if (!process.env.PINECONE_INDEX) {
+      throw new Error('PINECONE_INDEX is not set');
+    }
+    
+    const index = pinecone.index(process.env.PINECONE_INDEX);
+    const embedding = await generateEmbedding(text);
+    
+    await index.upsert([{
+      id: Date.now().toString(),
+      values: embedding,
+      metadata: { text }
+    }]);
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    console.error("Error:", error);
+    return NextResponse.json(
+      { error: "Failed to process request" },
+      { status: 500 }
+    );
   }
 }
