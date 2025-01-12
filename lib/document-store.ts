@@ -22,12 +22,12 @@ export class DocumentStore {
 
   private constructor() {
     this.embeddings = VercelEmbeddings.getInstance();
-    this.loadDocuments();
   }
 
-  static getInstance(): DocumentStore {
+  static async getInstance(): Promise<DocumentStore> {
     if (!this.instance) {
       this.instance = new DocumentStore();
+      await this.instance.loadDocuments();
     }
     return this.instance;
   }
@@ -36,16 +36,27 @@ export class DocumentStore {
     try {
       // Load documents from KV store
       const documents = await kv.get<Document[]>(this.DOCUMENTS_KEY);
-      if (documents) {
+      console.log('Raw documents from KV:', documents);
+
+      // Ensure documents is an array
+      if (Array.isArray(documents)) {
         this.documents = documents;
         console.log(`Loaded ${this.documents.length} documents from KV store`);
       } else {
-        console.log('No existing documents found');
+        console.log('No valid documents found, initializing empty array');
         this.documents = [];
+        // Initialize KV store with empty array
+        await kv.set(this.DOCUMENTS_KEY, []);
       }
     } catch (error) {
       console.error('Error loading documents:', error);
       this.documents = [];
+      // Initialize KV store with empty array on error
+      try {
+        await kv.set(this.DOCUMENTS_KEY, []);
+      } catch (kvError) {
+        console.error('Error initializing KV store:', kvError);
+      }
     }
   }
 

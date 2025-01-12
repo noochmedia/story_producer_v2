@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { DocumentStore } from '../../../lib/document-store';
+import type { Document } from '../../../lib/document-store';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -15,13 +16,20 @@ interface Source {
 export async function GET(request: NextRequest) {
   try {
     // Get document store instance
-    const store = DocumentStore.getInstance();
+    const store = await DocumentStore.getInstance();
 
     // Get all source documents
-    const documents = store.getDocuments({ type: 'source' });
+    const documents = await store.getDocuments({ type: 'source' });
+    
+    if (!Array.isArray(documents)) {
+      console.error('Documents is not an array:', documents);
+      return NextResponse.json({ 
+        error: 'Failed to fetch sources: Invalid document format',
+      }, { status: 500 });
+    }
 
     // Map documents to source format
-    const sources: Source[] = documents.map(doc => ({
+    const sources: Source[] = documents.map((doc: Document) => ({
       id: doc.id,
       name: doc.metadata.fileName,
       type: doc.metadata.fileType,
