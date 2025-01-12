@@ -23,16 +23,18 @@ const nextConfig = {
   },
   env: {
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-    DEEPINFRA_TOKEN: process.env.DEEPINFRA_TOKEN,
     PINECONE_API_KEY: process.env.PINECONE_API_KEY,
     PINECONE_INDEX: process.env.PINECONE_INDEX,
+    PINECONE_HOST: process.env.PINECONE_HOST,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   },
   serverRuntimeConfig: {
     // Will only be available on the server side
     OPENAI_API_KEY: process.env.OPENAI_API_KEY,
-    DEEPINFRA_TOKEN: process.env.DEEPINFRA_TOKEN,
     PINECONE_API_KEY: process.env.PINECONE_API_KEY,
     PINECONE_INDEX: process.env.PINECONE_INDEX,
+    PINECONE_HOST: process.env.PINECONE_HOST,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
   },
   publicRuntimeConfig: {
     // Will be available on both server and client
@@ -67,9 +69,10 @@ function mergeConfig(nextConfig, userConfig) {
 // Validate required environment variables
 const requiredEnvVars = [
   'OPENAI_API_KEY',
-  'DEEPINFRA_TOKEN',
   'PINECONE_API_KEY',
   'PINECONE_INDEX',
+  'PINECONE_HOST',
+  'OPENROUTER_API_KEY'
 ]
 
 for (const envVar of requiredEnvVars) {
