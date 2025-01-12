@@ -14,10 +14,10 @@ export class PineconeAssistant {
   }
 
   async generateEmbedding(text: string) {
-    // Extract the base URL without the protocol
-    const baseUrl = this.host.replace(/^https?:\/\//, '');
+    // Extract environment from host URL (e.g., "storytools-embedding-3-sj0uqym.svc.aped-4627-b74a.pinecone.io")
+    const environment = this.host.split('.')[0].split('-').slice(-1)[0];
     
-    const response = await fetch(`https://${baseUrl}/vectors/embed`, {
+    const response = await fetch(`https://embed-${environment}.us-east-1.aws.pinecone.io/embed`, {
       method: 'POST',
       headers: {
         'Api-Key': this.apiKey,
