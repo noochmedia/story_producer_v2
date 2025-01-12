@@ -57,7 +57,7 @@ async function processFile(file: File): Promise<ProcessedFile> {
       throw new Error(`No content extracted from ${fileName}`);
     }
 
-    // Only upload to Blob if text extraction was successful
+    // Upload to Blob for file viewing
     console.log(`[Blob] Attempting to upload ${fileName} to Vercel Blob...`);
     try {
       const blob = await put(fileName, file, {
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
     })));
 
     // Get document store instance
-    const store = DocumentStore.getInstance();
+    const store = await DocumentStore.getInstance();
 
     // Process each file
     const results: UploadResult[] = await Promise.all(files.map(async (file: File) => {
@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
           throw new Error(`No content extracted from ${name}`);
         }
 
-        // Add document to store
+        // Add document to store with blob URL if available
         const document = await store.addDocument(text, {
           fileName: name,
           fileType: file.type || 'text/plain',
@@ -158,9 +158,10 @@ export async function POST(request: NextRequest) {
 
         // Export documents to persist them
         const exportData = store.exportDocuments();
+        const allDocs = await store.getDocuments();
         console.log('Documents exported:', {
           dataLength: exportData.length,
-          documentCount: store.getDocuments().length
+          documentCount: allDocs.length
         });
 
         console.log(`Successfully processed ${name}:`, document);
