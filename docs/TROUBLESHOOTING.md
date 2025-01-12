@@ -70,6 +70,46 @@
    BLOB_READ_WRITE_TOKEN=your_blob_token
    ```
 
+#### Issue: Document Viewer Shows Blank Content
+**Symptoms:**
+- Document viewer opens but shows no content
+- No error messages in UI
+- Document list shows documents
+
+**Solution:**
+1. Check document loading:
+   ```typescript
+   // Add logging to loadDocuments
+   const docs = await Promise.all(loadPromises);
+   this.documents = docs.filter((doc): doc is Document => {
+     if (!doc) return false;
+     if (!doc.content) {
+       console.error('[DocumentStore] Document missing content:', doc.id);
+       return false;
+     }
+     return true;
+   });
+   ```
+
+2. Verify document content:
+   ```typescript
+   // Add content validation in view route
+   if (!document.content) {
+     console.error('[VIEW] Document found but has no content:', document.id);
+     return NextResponse.json({ error: 'Document content missing' }, { status: 500 });
+   }
+   ```
+
+3. Check server logs for:
+   - Document loading errors
+   - Missing content warnings
+   - Blob storage access issues
+
+4. Recovery steps:
+   - Reload documents: `await store.loadDocuments()`
+   - Check Blob storage: List all documents
+   - Verify document format
+
 ### Initialization Issues
 
 #### Issue: Embeddings Not Initialized
