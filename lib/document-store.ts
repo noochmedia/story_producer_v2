@@ -1,4 +1,6 @@
 import { VercelEmbeddings } from './vercel-embeddings';
+import fs from 'fs';
+import path from 'path';
 
 interface Document {
   id: string;
@@ -17,9 +19,12 @@ export class DocumentStore {
   private static instance: DocumentStore;
   private documents: Document[] = [];
   private embeddings: VercelEmbeddings;
+  private storePath: string;
 
   private constructor() {
     this.embeddings = VercelEmbeddings.getInstance();
+    this.storePath = path.join(process.cwd(), 'data', 'documents.json');
+    this.loadDocuments();
   }
 
   static getInstance(): DocumentStore {
@@ -27,6 +32,39 @@ export class DocumentStore {
       this.instance = new DocumentStore();
     }
     return this.instance;
+  }
+
+  private loadDocuments() {
+    try {
+      // Ensure data directory exists
+      const dataDir = path.join(process.cwd(), 'data');
+      if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+      }
+
+      // Load documents if file exists
+      if (fs.existsSync(this.storePath)) {
+        const data = fs.readFileSync(this.storePath, 'utf-8');
+        this.documents = JSON.parse(data);
+        console.log(`Loaded ${this.documents.length} documents from storage`);
+      } else {
+        console.log('No existing documents found');
+        this.documents = [];
+      }
+    } catch (error) {
+      console.error('Error loading documents:', error);
+      this.documents = [];
+    }
+  }
+
+  private saveDocuments() {
+    try {
+      fs.writeFileSync(this.storePath, JSON.stringify(this.documents, null, 2));
+      console.log(`Saved ${this.documents.length} documents to storage`);
+    } catch (error) {
+      console.error('Error saving documents:', error);
+      throw error;
+    }
   }
 
   async addDocument(content: string, metadata: Document['metadata']): Promise<Document> {
@@ -47,6 +85,9 @@ export class DocumentStore {
 
       // Store the document
       this.documents.push(document);
+
+      // Save to disk
+      this.saveDocuments();
 
       return document;
     } catch (error) {
@@ -77,11 +118,17 @@ export class DocumentStore {
         topK
       );
 
-      // Map back to full documents
+      // Map back to full documents with scores
       return results.map(result => {
         const doc = filteredDocs.find(d => d.content === result.content);
         if (!doc) throw new Error('Document not found');
-        return doc;
+        return {
+          ...doc,
+          metadata: {
+            ...doc.metadata,
+            score: result.score
+          }
+        };
       });
     } catch (error) {
       console.error('Error searching documents:', error);
@@ -104,6 +151,7 @@ export class DocumentStore {
     if (index === -1) return false;
 
     this.documents.splice(index, 1);
+    this.saveDocuments();
     return true;
   }
 
@@ -114,12 +162,16 @@ export class DocumentStore {
         doc.metadata[key] === value
       )
     );
-    return initialLength - this.documents.length;
+    const deletedCount = initialLength - this.documents.length;
+    if (deletedCount > 0) {
+      this.saveDocuments();
+    }
+    return deletedCount;
   }
 
-  // For persistence
+  // For backup/restore
   exportDocuments(): string {
-    return JSON.stringify(this.documents);
+    return JSON.stringify(this.documents, null, 2);
   }
 
   importDocuments(jsonData: string) {
@@ -129,6 +181,7 @@ export class DocumentStore {
         throw new Error('Invalid document data');
       }
       this.documents = documents;
+      this.saveDocuments();
     } catch (error) {
       console.error('Error importing documents:', error);
       throw error;
