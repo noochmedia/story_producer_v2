@@ -10,11 +10,18 @@ export class VercelEmbeddings {
     });
   }
 
-  static getInstance(): VercelEmbeddings {
-    if (!this.instance) {
-      this.instance = new VercelEmbeddings();
+  static async getInstance(): Promise<VercelEmbeddings> {
+    try {
+      if (!this.instance) {
+        this.instance = new VercelEmbeddings();
+        // Test the OpenAI connection
+        await this.instance.generateEmbedding("test");
+      }
+      return this.instance;
+    } catch (error) {
+      console.error('Error initializing VercelEmbeddings:', error);
+      throw error;
     }
-    return this.instance;
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
@@ -46,21 +53,67 @@ export class VercelEmbeddings {
 
   async searchSimilar(query: string, documents: { content: string; embedding: number[]; }[], topK: number = 5): Promise<Array<{ content: string; score: number; }>> {
     try {
+      console.log('Starting similarity search:', {
+        query,
+        documentsCount: documents.length,
+        topK
+      });
+
+      // Validate inputs
+      if (!query.trim()) {
+        throw new Error('Query cannot be empty');
+      }
+      if (!Array.isArray(documents) || documents.length === 0) {
+        throw new Error('No documents provided for search');
+      }
+      if (!documents.every(doc => Array.isArray(doc.embedding))) {
+        throw new Error('Invalid document embeddings');
+      }
+
       // Generate embedding for the query
+      console.log('Generating query embedding...');
       const queryEmbedding = await this.generateEmbedding(query);
+      console.log('Query embedding generated:', {
+        dimensions: queryEmbedding.length
+      });
 
       // Calculate cosine similarity with all documents
-      const similarities = documents.map(doc => ({
-        content: doc.content,
-        score: this.cosineSimilarity(queryEmbedding, doc.embedding)
-      }));
+      console.log('Calculating similarities...');
+      const similarities = documents.map(doc => {
+        try {
+          return {
+            content: doc.content,
+            score: this.cosineSimilarity(queryEmbedding, doc.embedding)
+          };
+        } catch (error) {
+          console.error('Error calculating similarity for document:', {
+            error,
+            docEmbeddingLength: doc.embedding.length,
+            queryEmbeddingLength: queryEmbedding.length
+          });
+          throw error;
+        }
+      });
 
       // Sort by similarity score and take top K
-      return similarities
+      console.log('Sorting results...');
+      const results = similarities
         .sort((a, b) => b.score - a.score)
         .slice(0, topK);
+
+      console.log('Search complete:', {
+        totalResults: similarities.length,
+        topScore: results[0]?.score,
+        bottomScore: results[results.length - 1]?.score
+      });
+
+      return results;
     } catch (error) {
-      console.error('Error searching similar documents:', error);
+      console.error('Error in searchSimilar:', {
+        error,
+        query,
+        documentsCount: documents?.length
+      });
       throw error;
     }
   }

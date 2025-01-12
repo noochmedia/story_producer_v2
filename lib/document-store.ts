@@ -17,11 +17,11 @@ export interface Document {
 export class DocumentStore {
   private static instance: DocumentStore;
   private documents: Document[] = [];
-  private embeddings: VercelEmbeddings;
+  private embeddings?: VercelEmbeddings;
   private initialized: boolean = false;
 
   private constructor() {
-    this.embeddings = VercelEmbeddings.getInstance();
+    // Embeddings will be initialized in loadDocuments
   }
 
   static async getInstance(): Promise<DocumentStore> {
@@ -36,6 +36,9 @@ export class DocumentStore {
     if (this.initialized) return;
 
     try {
+      // Initialize embeddings
+      this.embeddings = await VercelEmbeddings.getInstance();
+
       // List all blobs with our index prefix
       const { blobs } = await list({ prefix: 'documents/' });
       
@@ -81,6 +84,9 @@ export class DocumentStore {
   async addDocument(content: string, metadata: Document['metadata']): Promise<Document> {
     try {
       // Generate embedding for the document
+      if (!this.embeddings) {
+        throw new Error('Embeddings not initialized');
+      }
       const embedding = await this.embeddings.generateEmbedding(content);
 
       // Create document with unique ID
@@ -109,8 +115,17 @@ export class DocumentStore {
 
   async searchSimilar(query: string, filter?: Partial<Document['metadata']>, topK: number = 5): Promise<Document[]> {
     try {
+      console.log('Starting document search:', {
+        query,
+        filter,
+        topK
+      });
+
       // Ensure documents are loaded
       await this.loadDocuments();
+      console.log('Documents loaded:', {
+        totalDocuments: this.documents.length
+      });
 
       // Filter documents if filter provided
       let filteredDocs = this.documents;
@@ -120,22 +135,45 @@ export class DocumentStore {
             doc.metadata[key] === value
           )
         );
+        console.log('Documents filtered:', {
+          beforeCount: this.documents.length,
+          afterCount: filteredDocs.length,
+          filter
+        });
       }
 
+      // Validate embeddings initialization
+      if (!this.embeddings) {
+        console.error('Embeddings not initialized');
+        throw new Error('Embeddings not initialized');
+      }
+
+      // Prepare documents for similarity search
+      console.log('Preparing documents for similarity search...');
+      const searchDocs = filteredDocs.map(doc => ({
+        content: doc.content,
+        embedding: doc.embedding
+      }));
+
       // Search for similar documents
+      console.log('Performing similarity search...');
       const results = await this.embeddings.searchSimilar(
         query,
-        filteredDocs.map(doc => ({
-          content: doc.content,
-          embedding: doc.embedding
-        })),
+        searchDocs,
         topK
       );
 
       // Map back to full documents with scores
-      return results.map(result => {
+      console.log('Mapping search results to documents...');
+      const documents = results.map(result => {
         const doc = filteredDocs.find(d => d.content === result.content);
-        if (!doc) throw new Error('Document not found');
+        if (!doc) {
+          console.error('Document not found for search result:', {
+            content: result.content.substring(0, 100) + '...',
+            score: result.score
+          });
+          throw new Error('Document not found');
+        }
         return {
           ...doc,
           metadata: {
@@ -144,8 +182,23 @@ export class DocumentStore {
           }
         };
       });
+
+      console.log('Search complete:', {
+        query,
+        totalResults: documents.length,
+        topScore: documents[0]?.metadata.score,
+        bottomScore: documents[documents.length - 1]?.metadata.score
+      });
+
+      return documents;
     } catch (error) {
-      console.error('Error searching documents:', error);
+      console.error('Error in searchSimilar:', {
+        error,
+        query,
+        filter,
+        documentsLoaded: this.documents.length,
+        embeddingsInitialized: !!this.embeddings
+      });
       throw error;
     }
   }
