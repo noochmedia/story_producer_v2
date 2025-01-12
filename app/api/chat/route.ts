@@ -66,10 +66,7 @@ export async function POST(request: Request) {
 
     const response = completion.choices[0].message;
 
-    return NextResponse.json({ 
-      role: response.role,
-      content: response.content
-    });
+    return new Response(response.content);
 
   } catch (error) {
     console.error("Error:", error);
