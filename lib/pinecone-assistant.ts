@@ -52,17 +52,27 @@ export class PineconeAssistant {
       // If no embedding provided, generate one
       const vectorEmbedding = embedding || await this.generateEmbedding(content);
       const index = this.pinecone.index(this.indexName);
+
+      // Generate a unique ID that includes the file name for better traceability
+      const id = `${metadata.fileName || 'doc'}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       
       await index.upsert([{
-        id: Date.now().toString(),
+        id,
         values: vectorEmbedding,
         metadata: {
           content,
-          ...metadata
+          ...metadata,
+          timestamp: new Date().toISOString() // Add timestamp for sorting
         }
       }]);
 
-      return { success: true };
+      console.log(`[PINECONE] Uploaded document ${id} with metadata:`, {
+        fileName: metadata.fileName,
+        type: metadata.type,
+        hasBlob: metadata.hasBlob
+      });
+
+      return { success: true, id };
     } catch (error) {
       console.error('Error uploading document:', error);
       throw error;
@@ -82,8 +92,11 @@ export class PineconeAssistant {
     }
   }
 
-  async searchSimilar(query: string, filter?: Record<string, any>) {
+  async searchSimilar(query: string, filter?: Record<string, any>, topK: number = 5) {
     try {
+      console.log('[PINECONE] Searching with query:', query);
+      console.log('[PINECONE] Filter:', filter);
+
       const embedding = await this.generateEmbedding(query);
       const index = this.pinecone.index(this.indexName);
       
@@ -91,8 +104,11 @@ export class PineconeAssistant {
         vector: embedding,
         filter,
         includeMetadata: true,
-        topK: 5
+        topK
       });
+
+      console.log(`[PINECONE] Found ${results.matches.length} matches`);
+      console.log('[PINECONE] First match score:', results.matches[0]?.score);
 
       return results;
     } catch (error) {
