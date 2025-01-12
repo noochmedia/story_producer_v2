@@ -1,39 +1,10 @@
 import { NextResponse } from 'next/server';
 import { OpenAI } from 'openai';
-import pinecone from "@/lib/pinecone-assistant";
+import PineconeAssistant from '@/lib/pinecone-assistant';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
-
-async function generateEmbedding(text: string) {
-  const response = await openai.embeddings.create({
-    model: "text-embedding-ada-002",
-    input: text,
-  });
-  return response.data[0].embedding;
-}
-
-async function storeEmbedding(text: string) {
-  try {
-    if (!process.env.PINECONE_INDEX) {
-      console.warn('PINECONE_INDEX not set, skipping embedding storage');
-      return;
-    }
-
-    const embedding = await generateEmbedding(text);
-    const index = pinecone.index(process.env.PINECONE_INDEX);
-    
-    await index.upsert([{
-      id: Date.now().toString(),
-      values: embedding,
-      metadata: { text }
-    }]);
-  } catch (error) {
-    console.error('Error storing embedding:', error);
-    // Don't throw - we want the chat to continue even if embedding fails
-  }
-}
 
 export async function POST(request: Request) {
   try {
@@ -46,25 +17,61 @@ export async function POST(request: Request) {
       );
     }
 
+    // Initialize Pinecone Assistant
+    const assistant = new PineconeAssistant({
+      apiKey: process.env.PINECONE_API_KEY!,
+      indexName: process.env.PINECONE_INDEX!,
+      host: process.env.PINECONE_HOST!
+    });
+
     // Get the last user message
     const lastUserMessage = messages[messages.length - 1];
 
-    // Start storing the embedding in the background
-    if (deepDive) {
-      storeEmbedding(lastUserMessage.content);
+    // Build system prompt based on mode
+    let systemPrompt = `You are a helpful AI assistant with expertise in documentary storytelling and narrative structure.`;
+    
+    if (projectDetails) {
+      systemPrompt += `\n\nProject Context: ${projectDetails}`;
     }
+
+    if (deepDive) {
+      systemPrompt += `\n\nYou have access to source materials and can provide detailed, source-based responses.`;
+    }
+
+    if (isSoundbiteRequest) {
+      systemPrompt += `\n\nYou specialize in identifying and crafting compelling soundbites that capture key themes and moments.`;
+    }
+
+    // Prepare messages with system prompt
+    const fullMessages = [
+      { role: 'system', content: systemPrompt },
+      ...messages
+    ];
 
     // Get chat completion
     const completion = await openai.chat.completions.create({
       model: "gpt-4",
-      messages: messages.map(m => ({
-        role: m.role,
-        content: m.content
-      })),
+      messages: fullMessages,
       stream: false
     });
 
     const response = completion.choices[0].message;
+
+    // If in deep dive mode, store the interaction
+    if (deepDive) {
+      try {
+        await assistant.uploadDocument(
+          `Q: ${lastUserMessage.content}\nA: ${response.content}`,
+          {
+            type: 'conversation',
+            timestamp: new Date().toISOString()
+          }
+        );
+      } catch (error) {
+        console.error('Error storing conversation:', error);
+        // Don't throw - we want the chat to continue even if storage fails
+      }
+    }
 
     return new Response(response.content);
 
