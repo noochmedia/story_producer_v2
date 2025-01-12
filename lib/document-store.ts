@@ -1,4 +1,4 @@
-import { VercelEmbeddings } from './vercel-embeddings';
+import VercelEmbeddings from './vercel-embeddings';
 import { list, put, del } from '@vercel/blob';
 
 export interface Document {
@@ -27,6 +27,9 @@ export class DocumentStore {
   static async getInstance(): Promise<DocumentStore> {
     if (!this.instance) {
       this.instance = new DocumentStore();
+      // Initialize embeddings first
+      this.instance.embeddings = await VercelEmbeddings.getInstance();
+      // Then load documents
       await this.instance.loadDocuments();
     }
     return this.instance;
@@ -36,8 +39,10 @@ export class DocumentStore {
     if (this.initialized) return;
 
     try {
-      // Initialize embeddings
-      this.embeddings = await VercelEmbeddings.getInstance();
+      // Ensure embeddings are initialized
+      if (!this.embeddings) {
+        this.embeddings = await VercelEmbeddings.getInstance();
+      }
 
       // List all blobs with our index prefix
       const { blobs } = await list({ prefix: 'documents/' });

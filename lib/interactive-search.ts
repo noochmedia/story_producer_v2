@@ -1,6 +1,16 @@
 import OpenAI from 'openai';
 import { AI_CONFIG } from './ai-config';
 import { Document } from './document-store';
+import VercelEmbeddings from './vercel-embeddings';
+
+let embeddings: VercelEmbeddings | null = null;
+
+async function getEmbeddings() {
+  if (!embeddings) {
+    embeddings = await VercelEmbeddings.getInstance();
+  }
+  return embeddings;
+}
 
 export async function analyzeSourceCategories(
   sources: Document[],
