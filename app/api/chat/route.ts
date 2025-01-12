@@ -29,13 +29,17 @@ export async function POST(request: Request) {
     // Get the last user message
     const lastUserMessage = messages[messages.length - 1];
 
+    // Build system prompt with project context
+    const systemPrompt = `${AI_CONFIG.systemPrompt}\n\nProject Context: ${projectDetails || 'No project details provided yet.'}`;
+
     // Create readable stream for response
     const stream = new ReadableStream({
       async start(controller) {
         try {
           if (deepDive) {
-            // Search for relevant sources
-            const sources = await assistant.searchSimilar(lastUserMessage.content);
+            // Search for relevant sources with project context
+            const searchQuery = `${projectDetails ? 'Project: ' + projectDetails + '\n\n' : ''}Query: ${lastUserMessage.content}`;
+            const sources = await assistant.searchSimilar(searchQuery);
             
             // Analyze sources and stream response
             await analyzeSourceCategories(
@@ -51,7 +55,7 @@ export async function POST(request: Request) {
               temperature: AI_CONFIG.temperature,
               max_tokens: AI_CONFIG.max_tokens,
               messages: [
-                { role: 'system', content: AI_CONFIG.systemPrompt },
+                { role: 'system', content: systemPrompt },
                 ...messages
               ],
               stream: true
