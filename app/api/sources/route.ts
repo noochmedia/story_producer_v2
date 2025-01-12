@@ -1,35 +1,49 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { list } from '@vercel/blob'
+import { PineconeAssistant } from '../../../lib/pinecone-assistant'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-interface BlobSource {
-    url: string;
-    pathname: string;
-    contentType?: string;
-    uploadedAt?: string;
-}
-
 export async function GET(request: NextRequest) {
     try {
-        console.log('Listing files from Vercel Blob...');
-        const { blobs } = await list();
-        console.log('Found blobs:', blobs.length);
+        // Initialize Pinecone Assistant
+        const assistant = new PineconeAssistant({
+            apiKey: process.env.PINECONE_API_KEY!,
+            indexName: process.env.PINECONE_INDEX!,
+            host: process.env.PINECONE_HOST!
+        });
 
-        // Map blobs to source format
-        const sources = blobs.map((blob) => ({
-            id: blob.pathname, // Use pathname as unique identifier
-            name: blob.pathname.split('/').pop() || blob.pathname, // Extract filename from path
-            type: blob.downloadUrl.split('.').pop() || 'unknown', // Get type from file extension
-            url: blob.downloadUrl,
-            uploadedAt: new Date(blob.uploadedAt).toISOString()
+        // Search for all source documents
+        const results = await assistant.searchSimilar('', {
+            type: 'source'
+        }, 100); // Get up to 100 sources
+
+        // Map results to source format with proper typing
+        interface Source {
+            id: string;
+            name: string;
+            type: string;
+            url?: string;
+            uploadedAt: string;
+        }
+
+        const sources: Source[] = results.matches.map((match) => ({
+            id: match.id,
+            name: String(match.metadata?.fileName || 'Unknown'),
+            type: String(match.metadata?.fileType || 'unknown'),
+            url: match.metadata?.fileUrl ? String(match.metadata.fileUrl) : undefined,
+            uploadedAt: typeof match.metadata?.uploadedAt === 'string' 
+                ? match.metadata.uploadedAt 
+                : new Date().toISOString()
         }));
 
-        console.log('Sources processed successfully, count:', sources.length);
+        // Sort by upload date
+        sources.sort((a, b) => new Date(b.uploadedAt).getTime() - new Date(a.uploadedAt).getTime());
+
+        console.log('Sources retrieved successfully, count:', sources.length);
         return NextResponse.json(sources)
     } catch (error) {
-        console.error('Error fetching sources from Blob:', error);
+        console.error('Error fetching sources from Pinecone:', error);
         return NextResponse.json({ 
             error: 'Failed to fetch sources',
             details: error instanceof Error ? error.message : 'Unknown error'
