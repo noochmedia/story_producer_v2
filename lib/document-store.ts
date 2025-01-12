@@ -1,5 +1,5 @@
 import { VercelEmbeddings } from './vercel-embeddings';
-import { kv } from '@vercel/kv';
+import { list, put, del } from '@vercel/blob';
 
 export interface Document {
   id: string;
@@ -18,7 +18,7 @@ export class DocumentStore {
   private static instance: DocumentStore;
   private documents: Document[] = [];
   private embeddings: VercelEmbeddings;
-  private readonly DOCUMENTS_KEY = 'documents';
+  private initialized: boolean = false;
 
   private constructor() {
     this.embeddings = VercelEmbeddings.getInstance();
@@ -33,39 +33,47 @@ export class DocumentStore {
   }
 
   private async loadDocuments() {
-    try {
-      // Load documents from KV store
-      const documents = await kv.get<Document[]>(this.DOCUMENTS_KEY);
-      console.log('Raw documents from KV:', documents);
+    if (this.initialized) return;
 
-      // Ensure documents is an array
-      if (Array.isArray(documents)) {
-        this.documents = documents;
-        console.log(`Loaded ${this.documents.length} documents from KV store`);
-      } else {
-        console.log('No valid documents found, initializing empty array');
-        this.documents = [];
-        // Initialize KV store with empty array
-        await kv.set(this.DOCUMENTS_KEY, []);
-      }
+    try {
+      // List all blobs with our index prefix
+      const { blobs } = await list({ prefix: 'documents/' });
+      
+      // Load each document's metadata and embedding
+      const loadPromises = blobs.map(async blob => {
+        try {
+          const response = await fetch(blob.url);
+          const doc = await response.json() as Document;
+          return doc;
+        } catch (error) {
+          console.error(`Error loading document from ${blob.url}:`, error);
+          return null;
+        }
+      });
+
+      const docs = await Promise.all(loadPromises);
+      this.documents = docs.filter((doc): doc is Document => doc !== null);
+      
+      console.log(`Loaded ${this.documents.length} documents from Blob storage`);
+      this.initialized = true;
     } catch (error) {
       console.error('Error loading documents:', error);
       this.documents = [];
-      // Initialize KV store with empty array on error
-      try {
-        await kv.set(this.DOCUMENTS_KEY, []);
-      } catch (kvError) {
-        console.error('Error initializing KV store:', kvError);
-      }
+      this.initialized = true;
     }
   }
 
-  private async saveDocuments() {
+  private async saveDocument(doc: Document) {
     try {
-      await kv.set(this.DOCUMENTS_KEY, this.documents);
-      console.log(`Saved ${this.documents.length} documents to KV store`);
+      // Store the full document (including content and embedding) in Blob
+      const blob = await put(`documents/${doc.id}.json`, JSON.stringify(doc), {
+        access: 'public',
+        contentType: 'application/json',
+        addRandomSuffix: false
+      });
+      console.log(`Saved document ${doc.id} to Blob storage:`, blob.url);
     } catch (error) {
-      console.error('Error saving documents:', error);
+      console.error('Error saving document:', error);
       throw error;
     }
   }
@@ -86,11 +94,11 @@ export class DocumentStore {
         }
       };
 
-      // Store the document
-      this.documents.push(document);
+      // Save to Blob storage
+      await this.saveDocument(document);
 
-      // Save to KV store
-      await this.saveDocuments();
+      // Add to in-memory cache
+      this.documents.push(document);
 
       return document;
     } catch (error) {
@@ -102,9 +110,7 @@ export class DocumentStore {
   async searchSimilar(query: string, filter?: Partial<Document['metadata']>, topK: number = 5): Promise<Document[]> {
     try {
       // Ensure documents are loaded
-      if (this.documents.length === 0) {
-        await this.loadDocuments();
-      }
+      await this.loadDocuments();
 
       // Filter documents if filter provided
       let filteredDocs = this.documents;
@@ -146,9 +152,7 @@ export class DocumentStore {
 
   async getDocuments(filter?: Partial<Document['metadata']>): Promise<Document[]> {
     // Ensure documents are loaded
-    if (this.documents.length === 0) {
-      await this.loadDocuments();
-    }
+    await this.loadDocuments();
 
     if (!filter) return this.documents;
 
@@ -160,26 +164,32 @@ export class DocumentStore {
   }
 
   async deleteDocument(id: string): Promise<boolean> {
-    const index = this.documents.findIndex(doc => doc.id === id);
-    if (index === -1) return false;
+    try {
+      // Delete from Blob storage
+      await del(`documents/${id}.json`);
 
-    this.documents.splice(index, 1);
-    await this.saveDocuments();
-    return true;
+      // Remove from in-memory cache
+      const index = this.documents.findIndex(doc => doc.id === id);
+      if (index === -1) return false;
+
+      this.documents.splice(index, 1);
+      return true;
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      throw error;
+    }
   }
 
   async deleteDocuments(filter: Partial<Document['metadata']>): Promise<number> {
-    const initialLength = this.documents.length;
-    this.documents = this.documents.filter(doc =>
-      !Object.entries(filter).every(([key, value]) =>
+    const docsToDelete = this.documents.filter(doc =>
+      Object.entries(filter).every(([key, value]) =>
         doc.metadata[key] === value
       )
     );
-    const deletedCount = initialLength - this.documents.length;
-    if (deletedCount > 0) {
-      await this.saveDocuments();
-    }
-    return deletedCount;
+
+    const deletePromises = docsToDelete.map(doc => this.deleteDocument(doc.id));
+    const results = await Promise.all(deletePromises);
+    return results.filter(success => success).length;
   }
 
   // For backup/restore
@@ -193,8 +203,15 @@ export class DocumentStore {
       if (!Array.isArray(documents)) {
         throw new Error('Invalid document data');
       }
-      this.documents = documents;
-      await this.saveDocuments();
+
+      // Clear existing documents
+      await Promise.all(this.documents.map(doc => this.deleteDocument(doc.id)));
+
+      // Import new documents
+      await Promise.all(documents.map(doc => this.saveDocument(doc)));
+
+      // Reload documents
+      await this.loadDocuments();
     } catch (error) {
       console.error('Error importing documents:', error);
       throw error;
