@@ -116,7 +116,7 @@ export class OpenRouterClient {
           messages,
           max_tokens: maxTokens,
           temperature: AI_CONFIG.temperature,
-          stream: true
+          stream: false // Set to false for analysis to get complete response
         }),
       });
 
@@ -124,39 +124,12 @@ export class OpenRouterClient {
         throw new Error(`OpenRouter API error: ${response.status}`);
       }
 
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No response body available');
-      }
-
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || '';
-
-        for (const line of lines) {
-          if (line.trim() === '') continue;
-          if (line.includes('[DONE]')) continue;
-
-          try {
-            if (line.startsWith('data: ')) {
-              const data = JSON.parse(line.slice(6)) as OpenRouterStreamResponse;
-              const content = data.choices[0]?.delta?.content;
-              if (content) {
-                controller.enqueue(encoder.encode(`data: ${content}\n\n`));
-                fullResponse += content;
-              }
-            }
-          } catch (error) {
-            console.error('Error parsing stream line:', error);
-          }
-        }
+      const data = await response.json();
+      const content = data.choices[0]?.message?.content;
+      
+      if (content) {
+        fullResponse = content;
+        controller.enqueue(encoder.encode(`data: ${content}\n\n`));
       }
 
       return fullResponse;

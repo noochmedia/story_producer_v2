@@ -36,11 +36,12 @@ export async function analyzeSourceCategories(
       console.log(`Processing chunk ${i / CHUNK_SIZE + 1} of ${Math.ceil(sources.length / CHUNK_SIZE)}`);
       controller.enqueue(new TextEncoder().encode(`[STAGE:Analyzing part ${i / CHUNK_SIZE + 1} of ${Math.ceil(sources.length / CHUNK_SIZE)}]\n\n`));
 
-      // Analyze this chunk using OpenRouter
-      const chunkAnalysis = await openRouter.generateAnalysis([
-        {
-          role: 'system',
-          content: `You are analyzing a subset of interview transcripts to answer questions about: ${query}
+      try {
+        // Analyze this chunk using OpenRouter
+        const chunkAnalysis = await openRouter.generateAnalysis([
+          {
+            role: 'system',
+            content: `You are analyzing a subset of interview transcripts to answer questions about: ${query}
 
 Your task is to:
 1. Analyze this portion of the content
@@ -55,14 +56,21 @@ Format your response with:
 - Key Information Found
 - Relevant Quotes
 - New Themes Identified`
-        },
-        {
-          role: 'user',
-          content: chunkContent
-        }
-      ], 1000, controller);
+          },
+          {
+            role: 'user',
+            content: chunkContent
+          }
+        ], 1000, controller);
 
-      combinedAnalysis += chunkAnalysis + '\n\n';
+        if (chunkAnalysis) {
+          combinedAnalysis += chunkAnalysis + '\n\n';
+          controller.enqueue(new TextEncoder().encode(`data: ${chunkAnalysis}\n\n`));
+        }
+      } catch (error) {
+        console.error('Error analyzing chunk:', error);
+        controller.enqueue(new TextEncoder().encode(`data: Error analyzing chunk: ${error instanceof Error ? error.message : 'Unknown error'}\n\n`));
+      }
     }
 
     // Final synthesis of all chunks
@@ -96,6 +104,10 @@ Format your response with:
           content: 'Please provide a final synthesis.'
         }
       ], 1000, controller);
+
+      if (finalAnalysis) {
+        controller.enqueue(new TextEncoder().encode(`data: ${finalAnalysis}\n\n`));
+      }
 
     console.log('Final synthesis complete');
 
