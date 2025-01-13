@@ -23,7 +23,7 @@ export async function analyzeSourceCategories(
     console.log('Starting initial analysis with sources:', sources.length);
 
     // Process sources in chunks to avoid token limits
-    const CHUNK_SIZE = 3; // Process 3 sources at a time
+    const CHUNK_SIZE = 1; // Process 1 source at a time to avoid token limits
     let combinedAnalysis = '';
 
     // Process sources in chunks
@@ -168,7 +168,7 @@ export async function processUserChoice(
   controller.enqueue(new TextEncoder().encode('[STAGE:Processing your selection]\n\n'));
 
   // Process sources in chunks
-  const CHUNK_SIZE = 3;
+    const CHUNK_SIZE = 1; // Process 1 source at a time to avoid token limits
   let combinedAnalysis = previousAnalysis;
 
   for (let i = 0; i < sources.length; i += CHUNK_SIZE) {

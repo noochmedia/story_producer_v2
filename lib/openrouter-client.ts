@@ -39,7 +39,7 @@ export class OpenRouterClient {
       });
 
       const abortController = new AbortController();
-      const timeout = setTimeout(() => abortController.abort(), 30000); // 30 second timeout
+      const timeout = setTimeout(() => abortController.abort(), 60000); // 60 second timeout
 
       const response = await fetch(`${this.baseURL}/chat/completions`, {
         signal: abortController.signal,
@@ -125,7 +125,7 @@ export class OpenRouterClient {
 
     try {
       const abortController = new AbortController();
-      const timeout = setTimeout(() => abortController.abort(), 30000); // 30 second timeout
+      const timeout = setTimeout(() => abortController.abort(), 60000); // 60 second timeout
 
       const response = await fetch(`${this.baseURL}/chat/completions`, {
         signal: abortController.signal,
