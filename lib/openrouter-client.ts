@@ -54,8 +54,7 @@ export class OpenRouterClient {
           'Authorization': `Bearer sk-${this.apiKey.replace(/^(Bearer\s+)?sk-/, '')}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://github.com/noochmedia/story_producer_v2',
-          'X-Title': 'Story Producer v2',
-          'OpenAI-Organization': 'story-producer-v2'
+          'X-Title': 'Story Producer v2'
         },
         body: JSON.stringify({
           model,
@@ -147,8 +146,7 @@ export class OpenRouterClient {
           'Authorization': `Bearer sk-${this.apiKey.replace(/^(Bearer\s+)?sk-/, '')}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://github.com/noochmedia/story_producer_v2',
-          'X-Title': 'Story Producer v2',
-          'OpenAI-Organization': 'story-producer-v2'
+          'X-Title': 'Story Producer v2'
         },
         body: JSON.stringify({
           model,
