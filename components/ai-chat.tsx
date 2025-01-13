@@ -265,8 +265,8 @@ export function AIChat() {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <ScrollArea className="flex-1 p-4">
+    <div className="h-full flex flex-col relative">
+      <ScrollArea className="absolute inset-0 bottom-[120px] p-4">
         {messages.map((message, index) => (
           <div key={index} className={`mb-2 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
             <span className={`inline-block p-2 rounded-lg text-sm ${
@@ -285,7 +285,7 @@ export function AIChat() {
         )}
       </ScrollArea>
 
-      <div className="border-t bg-background">
+      <div className="absolute bottom-0 left-0 right-0 border-t bg-background">
         {/* Quick Action Buttons */}
         <div className="flex gap-2 px-4 py-3 border-b">
           {quickActions.map((action, index) => (

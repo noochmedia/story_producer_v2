@@ -16,7 +16,7 @@ interface ProcessedFile {
   };
 }
 
-interface UploadResult {
+ interface UploadResult {
   success: boolean;
   fileName: string;
   error?: string;
