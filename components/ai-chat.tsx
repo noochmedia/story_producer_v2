@@ -265,8 +265,8 @@ export function AIChat() {
   }
 
   return (
-    <div className="h-full flex flex-col">
-      <ScrollArea className="flex-grow mb-4 p-4 border rounded">
+    <div className="h-full flex flex-col relative">
+      <ScrollArea className="absolute inset-0 bottom-[160px] p-4 border rounded">
         {messages.map((message, index) => (
           <div key={index} className={`mb-2 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
             <span className={`inline-block p-2 rounded-lg text-sm ${
@@ -285,9 +285,9 @@ export function AIChat() {
         )}
       </ScrollArea>
 
-      <div className="flex flex-col gap-2">
+      <div className="absolute bottom-0 left-0 right-0 p-4 bg-background border-t shadow-[0_0_10px_rgba(0,0,0,0.1)]">
         {/* Quick Action Buttons */}
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1 mb-4">
           {quickActions.map((action, index) => (
             <Button
               key={index}
@@ -303,7 +303,7 @@ export function AIChat() {
         </div>
 
         {/* Input Area */}
-        <div className="flex gap-2 items-center">
+        <div className="flex gap-2 items-center mt-2">
           <Input
             ref={inputRef}
             value={input}
