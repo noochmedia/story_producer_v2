@@ -292,9 +292,9 @@ export function AIChat() {
             <Button
               key={index}
               onClick={action.action}
-              variant="ghost"
+              variant="outline"
               size="sm"
-              className="text-xs text-muted-foreground hover:text-foreground"
+              className="text-xs text-muted-foreground hover:text-foreground border-[0.5px]"
               disabled={isLoading}
             >
               {action.label}
@@ -314,7 +314,7 @@ export function AIChat() {
             disabled={isLoading}
           />
           <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 border rounded px-2 py-1 border-[0.5px]">
               <Checkbox
                 id="useSources"
                 checked={useSources}
@@ -339,9 +339,9 @@ export function AIChat() {
             <Button 
               onClick={sendMessage} 
               disabled={isLoading}
-              variant="ghost"
+              variant="outline"
               size="sm"
-              className="text-xs min-w-[60px]"
+              className="text-xs min-w-[60px] border-[0.5px]"
             >
               {isLoading ? 'Thinking...' : 'Send'}
             </Button>

@@ -137,21 +137,21 @@ export function Sources() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-between items-center">
+      <div className="space-y-2">
         <h2 className="text-sm text-muted-foreground">Sources</h2>
-        <div className="space-x-2">
+        <div className="flex gap-2">
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            className="text-xs text-muted-foreground hover:text-foreground"
+            className="text-xs text-muted-foreground hover:text-foreground border-[0.5px]"
             onClick={() => setShowSources(!showSources)}
           >
-            {showSources ? 'Hide' : 'Show'} Sources
+            {showSources ? 'Hide' : 'Show'}
           </Button>
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
-            className="text-xs text-muted-foreground hover:text-foreground"
+            className="text-xs text-muted-foreground hover:text-foreground border-[0.5px]"
             onClick={fetchSources}
             disabled={isLoading || isAnalyzing}
           >
