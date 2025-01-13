@@ -52,6 +52,7 @@ export class OpenRouterClient {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey.replace(/^(Bearer\s+)?/, '')}`,
+          'Accept': 'application/json',
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://story-producer-v2.vercel.app',
           'X-Title': 'Story Producer',
@@ -150,6 +151,7 @@ export class OpenRouterClient {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey.replace(/^(Bearer\s+)?/, '')}`,
+          'Accept': 'application/json',
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://story-producer-v2.vercel.app',
           'X-Title': 'Story Producer',
