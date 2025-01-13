@@ -265,8 +265,8 @@ export function AIChat() {
   }
 
   return (
-    <div className="h-full flex flex-col relative">
-      <ScrollArea className="absolute inset-0 bottom-[160px] p-4 border rounded">
+    <div className="h-full flex flex-col">
+      <ScrollArea className="flex-1 p-4">
         {messages.map((message, index) => (
           <div key={index} className={`mb-2 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
             <span className={`inline-block p-2 rounded-lg text-sm ${
@@ -285,16 +285,16 @@ export function AIChat() {
         )}
       </ScrollArea>
 
-      <div className="absolute bottom-0 left-0 right-0 p-4 bg-background border-t shadow-[0_0_10px_rgba(0,0,0,0.1)]">
+      <div className="border-t bg-background">
         {/* Quick Action Buttons */}
-        <div className="flex flex-wrap gap-1 mb-4">
+        <div className="flex gap-2 px-4 py-3 border-b">
           {quickActions.map((action, index) => (
             <Button
               key={index}
               onClick={action.action}
               variant="outline"
               size="sm"
-              className="text-xs text-muted-foreground hover:text-foreground border-[0.5px]"
+              className="text-sm text-muted-foreground hover:text-foreground border-[0.5px]"
               disabled={isLoading}
             >
               {action.label}
@@ -303,48 +303,45 @@ export function AIChat() {
         </div>
 
         {/* Input Area */}
-        <div className="flex gap-2 items-center mt-2">
-          <Input
-            ref={inputRef}
-            value={input}
-            onChange={handleInputChange}
-            placeholder="Start chatting, ask a question, or choose an option above"
-            className="flex-grow text-sm"
-            onKeyPress={handleKeyPress}
-            disabled={isLoading}
-          />
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1 border rounded px-2 py-1 border-[0.5px]">
-              <Checkbox
-                id="useSources"
-                checked={useSources}
-                onCheckedChange={(checked) => {
-                  const newValue = checked as boolean;
-                  console.log('Sources checkbox changed:', { 
-                    oldValue: useSources, 
-                    newValue 
-                  });
-                  setUseSources(newValue);
-                }}
-                disabled={isLoading}
-                className="h-3 w-3"
-              />
-              <label
-                htmlFor="useSources"
-                className="text-xs text-muted-foreground"
-              >
-                Use sources
-              </label>
-            </div>
-            <Button 
-              onClick={sendMessage} 
+        <div className="flex items-center px-4 py-3">
+          <div className="flex-1 flex items-center gap-3">
+            <Input
+              ref={inputRef}
+              value={input}
+              onChange={handleInputChange}
+              placeholder="Start chatting, ask a question, or choose an option above"
+              className="flex-1 text-sm"
+              onKeyPress={handleKeyPress}
               disabled={isLoading}
-              variant="outline"
-              size="sm"
-              className="text-xs min-w-[60px] border-[0.5px]"
-            >
-              {isLoading ? 'Thinking...' : 'Send'}
-            </Button>
+            />
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1">
+                <Checkbox
+                  id="useSources"
+                  checked={useSources}
+                  onCheckedChange={(checked) => {
+                    const newValue = checked as boolean;
+                    setUseSources(newValue);
+                  }}
+                  disabled={isLoading}
+                />
+                <label
+                  htmlFor="useSources"
+                  className="text-sm text-muted-foreground whitespace-nowrap"
+                >
+                  Use sources
+                </label>
+              </div>
+              <Button 
+                onClick={sendMessage} 
+                disabled={isLoading}
+                size="sm"
+                variant="outline"
+                className="border-[0.5px]"
+              >
+                {isLoading ? 'Thinking...' : 'Send'}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
