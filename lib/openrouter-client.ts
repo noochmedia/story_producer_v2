@@ -27,7 +27,7 @@ export class OpenRouterClient {
     maxTokens: number,
     controller: ReadableStreamDefaultController
   ): Promise<boolean> {
-    const model = messages.length > 50 ? "anthropic/claude-2" : "openai/gpt-4";
+    const model = "openai/gpt-4";
     const encoder = new TextEncoder();
 
     try {
@@ -132,7 +132,9 @@ export class OpenRouterClient {
     maxTokens: number,
     controller: ReadableStreamDefaultController
   ): Promise<string> {
-    const model = "anthropic/claude-2"; // Use Claude for analysis
+    // Use GPT-4 by default, switch to Claude-2 for large content
+    const totalContentLength = messages.reduce((sum, msg) => sum + msg.content.length, 0);
+    const model = totalContentLength > 15000 ? "anthropic/claude-2" : "openai/gpt-4";
     const encoder = new TextEncoder();
     let fullResponse = '';
 
