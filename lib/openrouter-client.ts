@@ -35,7 +35,8 @@ export class OpenRouterClient {
         model,
         messageCount: messages.length,
         maxTokens,
-        stream: true
+        stream: true,
+        modelReason: 'Default model for chat'
       });
 
       const abortController = new AbortController();
@@ -135,6 +136,11 @@ export class OpenRouterClient {
     // Use GPT-4 by default, switch to Claude-2 for large content
     const totalContentLength = messages.reduce((sum, msg) => sum + msg.content.length, 0);
     const model = totalContentLength > 15000 ? "anthropic/claude-2" : "openai/gpt-4";
+    console.log('Selected model for analysis:', {
+      model,
+      contentLength: totalContentLength,
+      modelReason: totalContentLength > 15000 ? 'Large content length' : 'Default model'
+    });
     const encoder = new TextEncoder();
     let fullResponse = '';
 
