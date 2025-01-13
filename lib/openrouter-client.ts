@@ -38,7 +38,11 @@ export class OpenRouterClient {
         stream: true
       });
 
+      const abortController = new AbortController();
+      const timeout = setTimeout(() => abortController.abort(), 30000); // 30 second timeout
+
       const response = await fetch(`${this.baseURL}/chat/completions`, {
+        signal: abortController.signal,
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
@@ -55,6 +59,8 @@ export class OpenRouterClient {
         }),
       });
 
+      clearTimeout(timeout);
+      
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const error = {
@@ -118,7 +124,11 @@ export class OpenRouterClient {
     let fullResponse = '';
 
     try {
+      const abortController = new AbortController();
+      const timeout = setTimeout(() => abortController.abort(), 30000); // 30 second timeout
+
       const response = await fetch(`${this.baseURL}/chat/completions`, {
+        signal: abortController.signal,
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
@@ -135,6 +145,8 @@ export class OpenRouterClient {
         }),
       });
 
+      clearTimeout(timeout);
+      
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const error = {
@@ -147,9 +159,17 @@ export class OpenRouterClient {
         throw new Error(`OpenRouter API error: ${response.status} - ${JSON.stringify(error)}`);
       }
 
-      console.log('OpenRouter response received');
-      const data = await response.json();
+      console.log('OpenRouter response received:', {
+        status: response.status,
+        headers: Object.fromEntries(response.headers.entries())
+      });
+      
+      const rawData = await response.text();
+      console.log('OpenRouter raw response:', rawData.substring(0, 500) + '...');
+      
+      const data = JSON.parse(rawData);
       console.log('OpenRouter response parsed:', {
+        raw: rawData.substring(0, 100) + '...',
         hasChoices: !!data.choices,
         firstChoice: data.choices?.[0] ? {
           hasMessage: !!data.choices[0].message,
@@ -157,7 +177,7 @@ export class OpenRouterClient {
           contentLength: data.choices[0].message?.content?.length
         } : null
       });
-      const content = data.choices?.[0]?.message?.content;
+      const content = data.choices?.[0]?.message?.content || data.choices?.[0]?.text;
       
       if (content) {
         console.log('Analysis content received:', {
