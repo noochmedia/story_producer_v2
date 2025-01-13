@@ -1,5 +1,5 @@
 export const AI_CONFIG = {
-  model: "gpt-4o",
+  model: "gpt-4",
   temperature: 0.7,
   max_tokens: 2000,
   systemPrompt: `I am Reflect 1.0 (Beta), an AI assistant focused on analyzing interview transcripts and documentary content.

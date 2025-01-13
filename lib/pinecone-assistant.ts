@@ -14,37 +14,16 @@ export class PineconeAssistant {
   }
 
   async generateEmbedding(text: string) {
-    // Extract environment from host URL (e.g., "storytools-embedding-3-sj0uqym.svc.aped-4627-b74a.pinecone.io")
-    const environment = this.host.split('.')[0].split('-').slice(-1)[0];
-    
-    const response = await fetch(`https://embed-${environment}.us-east-1.aws.pinecone.io/embed`, {
-      method: 'POST',
-      headers: {
-        'Api-Key': this.apiKey,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        model: 'multilingual-e5-large',
-        inputs: [text],
-        parameters: {
-          input_type: 'passage',
-          truncate: 'END'
-        }
-      })
+    const openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error('Pinecone API Error:', {
-        status: response.status,
-        statusText: response.statusText,
-        error: errorText
-      });
-      throw new Error(`Pinecone embedding API error: ${response.statusText} - ${errorText}`);
-    }
+    const response = await openai.embeddings.create({
+      model: "text-embedding-ada-002",
+      input: text,
+    });
 
-    const data = await response.json();
-    return data.embeddings[0];
+    return response.data[0].embedding;
   }
 
   async uploadDocument(content: string, metadata: Record<string, any>, embedding?: number[]) {
