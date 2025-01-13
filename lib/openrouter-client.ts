@@ -31,10 +31,11 @@ export class OpenRouterClient {
     const encoder = new TextEncoder();
 
     try {
-      console.log('Sending analysis request to OpenRouter:', {
+      console.log('Sending OpenRouter stream request:', {
         model,
         messageCount: messages.length,
-        maxTokens
+        maxTokens,
+        stream: true
       });
 
       const response = await fetch(`${this.baseURL}/chat/completions`, {
@@ -55,7 +56,15 @@ export class OpenRouterClient {
       });
 
       if (!response.ok) {
-        throw new Error(`OpenRouter API error: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        const error = {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData,
+          headers: Object.fromEntries(response.headers.entries())
+        };
+        console.error('OpenRouter streaming error:', error);
+        throw new Error(`OpenRouter API error: ${response.status} - ${JSON.stringify(error)}`);
       }
 
       const reader = response.body?.getReader();
@@ -128,12 +137,14 @@ export class OpenRouterClient {
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
-        console.error('OpenRouter API error:', {
+        const error = {
           status: response.status,
           statusText: response.statusText,
-          error: errorData
-        });
-        throw new Error(`OpenRouter API error: ${response.status} - ${errorData.error || response.statusText}`);
+          error: errorData,
+          headers: Object.fromEntries(response.headers.entries())
+        };
+        console.error('OpenRouter API error:', error);
+        throw new Error(`OpenRouter API error: ${response.status} - ${JSON.stringify(error)}`);
       }
 
       console.log('OpenRouter response received');
