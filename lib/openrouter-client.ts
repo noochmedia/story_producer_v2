@@ -67,13 +67,18 @@ export class OpenRouterClient {
 
       clearTimeout(timeout);
       
+      const headers = Object.fromEntries(response.headers.entries());
+      if (headers['x-clerk-auth-status'] === 'signed-out') {
+        throw new Error('Authentication failed: Please check your OpenRouter API key');
+      }
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const error = {
           status: response.status,
           statusText: response.statusText,
           error: errorData,
-          headers: Object.fromEntries(response.headers.entries())
+          headers
         };
         console.error('OpenRouter streaming error:', error);
         throw new Error(`OpenRouter API error: ${response.status} - ${JSON.stringify(error)}`);
@@ -159,13 +164,18 @@ export class OpenRouterClient {
 
       clearTimeout(timeout);
       
+      const headers = Object.fromEntries(response.headers.entries());
+      if (headers['x-clerk-auth-status'] === 'signed-out') {
+        throw new Error('Authentication failed: Please check your OpenRouter API key');
+      }
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         const error = {
           status: response.status,
           statusText: response.statusText,
           error: errorData,
-          headers: Object.fromEntries(response.headers.entries())
+          headers
         };
         console.error('OpenRouter API error:', error);
         throw new Error(`OpenRouter API error: ${response.status} - ${JSON.stringify(error)}`);
