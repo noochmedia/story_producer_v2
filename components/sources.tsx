@@ -138,16 +138,20 @@ export function Sources() {
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
-        <h2 className="text-lg font-semibold">Sources</h2>
+        <h2 className="text-sm text-muted-foreground">Sources</h2>
         <div className="space-x-2">
           <Button
-            variant="outline"
+            variant="ghost"
+            size="sm"
+            className="text-xs text-muted-foreground hover:text-foreground"
             onClick={() => setShowSources(!showSources)}
           >
             {showSources ? 'Hide' : 'Show'} Sources
           </Button>
           <Button
-            variant="outline"
+            variant="ghost"
+            size="sm"
+            className="text-xs text-muted-foreground hover:text-foreground"
             onClick={fetchSources}
             disabled={isLoading || isAnalyzing}
           >
@@ -178,13 +182,14 @@ export function Sources() {
           ) : sources.length > 0 ? (
             <div className="space-y-2">
               {sources.map((source) => (
-                <div key={source.id} className="p-3 border rounded-lg">
+                <div key={source.id} className="p-2 border rounded-lg">
                   <div className="flex justify-between items-center">
-                    <h3 className="font-medium">{source.name}</h3>
+                    <h3 className="text-sm text-muted-foreground">{source.name}</h3>
                     <div className="flex items-center space-x-2">
                       <Button
                         variant="ghost"
-                        size="icon"
+                        size="sm"
+                        className="h-7 w-7"
                         onClick={() => handleView(source)}
                         title="View source"
                       >
@@ -192,7 +197,8 @@ export function Sources() {
                       </Button>
                       <Button
                         variant="ghost"
-                        size="icon"
+                        size="sm"
+                        className="h-7 w-7"
                         onClick={() => handleDelete(source.id)}
                         disabled={isDeleting === source.id}
                         title="Delete source"
@@ -210,8 +216,8 @@ export function Sources() {
             </div>
           ) : (
             <div className="text-center p-4 border rounded-lg">
-              <p className="text-muted-foreground">No sources uploaded yet.</p>
-              <p className="text-sm mt-1">Upload files to get started.</p>
+              <p className="text-xs text-muted-foreground">No sources uploaded yet.</p>
+              <p className="text-xs mt-1 text-muted-foreground">Upload files to get started.</p>
             </div>
           )}
         </div>

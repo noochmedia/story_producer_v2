@@ -269,17 +269,17 @@ export function AIChat() {
       <ScrollArea className="flex-grow mb-4 p-4 border rounded">
         {messages.map((message, index) => (
           <div key={index} className={`mb-2 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
-            <span className={`inline-block p-2 rounded-lg ${
+            <span className={`inline-block p-2 rounded-lg text-sm ${
               message.role === 'user' 
-                ? 'bg-primary text-primary-foreground' 
-                : 'bg-muted text-foreground'
+                ? 'bg-accent text-accent-foreground' 
+                : 'bg-muted text-muted-foreground'
             }`}>
               {message.content}
             </span>
           </div>
         ))}
         {isLoading && analysisStage && (
-          <div className="text-sm text-foreground animate-pulse">
+          <div className="text-xs text-muted-foreground animate-pulse">
             {analysisStage}...
           </div>
         )}
@@ -287,13 +287,14 @@ export function AIChat() {
 
       <div className="flex flex-col gap-2">
         {/* Quick Action Buttons */}
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap gap-1">
           {quickActions.map((action, index) => (
             <Button
               key={index}
               onClick={action.action}
-              variant="outline"
+              variant="ghost"
               size="sm"
+              className="text-xs text-muted-foreground hover:text-foreground"
               disabled={isLoading}
             >
               {action.label}
@@ -308,7 +309,7 @@ export function AIChat() {
             value={input}
             onChange={handleInputChange}
             placeholder="Start chatting, ask a question, or choose an option above"
-            className="flex-grow"
+            className="flex-grow text-sm"
             onKeyPress={handleKeyPress}
             disabled={isLoading}
           />
@@ -326,10 +327,11 @@ export function AIChat() {
                   setUseSources(newValue);
                 }}
                 disabled={isLoading}
+                className="h-3 w-3"
               />
               <label
                 htmlFor="useSources"
-                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                className="text-xs text-muted-foreground"
               >
                 Use sources
               </label>
@@ -337,7 +339,9 @@ export function AIChat() {
             <Button 
               onClick={sendMessage} 
               disabled={isLoading}
-              className="min-w-[80px]"
+              variant="ghost"
+              size="sm"
+              className="text-xs min-w-[60px]"
             >
               {isLoading ? 'Thinking...' : 'Send'}
             </Button>

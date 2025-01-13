@@ -10,6 +10,7 @@ import { useProject } from "../lib/project-context"
 export function ProjectDetails() {
   const { projectDetails, setProjectDetails, refreshProjectDetails } = useProject()
   const [isLoading, setIsLoading] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
   const { toast } = useToast()
 
   const saveDetails = async () => {
@@ -44,18 +45,64 @@ export function ProjectDetails() {
     }
   }
 
+  const handleSave = async () => {
+    await saveDetails();
+    setIsEditing(false);
+  };
+
   return (
     <div className="space-y-4">
-      <h2 className="text-lg font-semibold">Project Details</h2>
-      <Textarea
-        value={projectDetails}
-        onChange={(e) => setProjectDetails(e.target.value)}
-        placeholder="Add your project details. The more information you provide, the better the results will be."
-        className="h-40"
-      />
-      <Button onClick={saveDetails} disabled={isLoading}>
-        {isLoading ? 'Saving...' : 'Save Details'}
-      </Button>
+      <div className="flex justify-between items-center">
+        <h2 className="text-sm text-muted-foreground">Project Details</h2>
+        {!isEditing && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-xs text-muted-foreground hover:text-foreground"
+            onClick={() => setIsEditing(true)}
+          >
+            Edit
+          </Button>
+        )}
+      </div>
+      
+      {isEditing ? (
+        <div className="space-y-2">
+          <Textarea
+            value={projectDetails}
+            onChange={(e) => setProjectDetails(e.target.value)}
+            placeholder="Add your project details. The more information you provide, the better the results will be."
+            className="h-40 text-sm"
+          />
+          <div className="flex justify-end space-x-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              onClick={() => setIsEditing(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-xs"
+              onClick={handleSave}
+              disabled={isLoading}
+            >
+              {isLoading ? 'Saving...' : 'Save'}
+            </Button>
+          </div>
+        </div>
+      ) : projectDetails ? (
+        <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+          {projectDetails}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground italic">
+          No project details added yet.
+        </p>
+      )}
     </div>
   )
 }
