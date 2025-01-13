@@ -41,6 +41,12 @@ export class OpenRouterClient {
       const abortController = new AbortController();
       const timeout = setTimeout(() => abortController.abort(), 60000); // 60 second timeout
 
+      // Filter out any empty messages
+      const validMessages = messages.filter(msg => msg.content.trim().length > 0);
+      if (validMessages.length === 0) {
+        throw new Error('No valid messages to send');
+      }
+
       const response = await fetch(`${this.baseURL}/chat/completions`, {
         signal: abortController.signal,
         method: 'POST',
@@ -48,11 +54,12 @@ export class OpenRouterClient {
           'Authorization': this.apiKey.startsWith('Bearer ') ? this.apiKey : `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://github.com/noochmedia/story_producer_v2',
-          'X-Title': 'Story Producer v2'
+          'X-Title': 'Story Producer v2',
+          'OpenAI-Organization': 'story-producer-v2'
         },
         body: JSON.stringify({
           model,
-          messages,
+          messages: validMessages,
           max_tokens: maxTokens,
           temperature: AI_CONFIG.temperature,
           stream: true
@@ -127,6 +134,12 @@ export class OpenRouterClient {
       const abortController = new AbortController();
       const timeout = setTimeout(() => abortController.abort(), 60000); // 60 second timeout
 
+      // Filter out any empty messages
+      const validMessages = messages.filter(msg => msg.content.trim().length > 0);
+      if (validMessages.length === 0) {
+        throw new Error('No valid messages to send');
+      }
+
       const response = await fetch(`${this.baseURL}/chat/completions`, {
         signal: abortController.signal,
         method: 'POST',
@@ -134,11 +147,12 @@ export class OpenRouterClient {
           'Authorization': this.apiKey.startsWith('Bearer ') ? this.apiKey : `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://github.com/noochmedia/story_producer_v2',
-          'X-Title': 'Story Producer v2'
+          'X-Title': 'Story Producer v2',
+          'OpenAI-Organization': 'story-producer-v2'
         },
         body: JSON.stringify({
           model,
-          messages,
+          messages: validMessages,
           max_tokens: maxTokens,
           temperature: AI_CONFIG.temperature,
           stream: false // Set to false for analysis to get complete response
