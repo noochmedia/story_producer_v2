@@ -22,27 +22,87 @@ export async function analyzeSourceCategories(
     controller.enqueue(new TextEncoder().encode('[STAGE:Analyzing available information]\n\n'));
     console.log('Starting initial analysis with sources:', sources.length);
 
-    // Combine content for analysis
-    const allContent = sources
-      .map(source => `[From ${source.metadata.fileName}]:\n${source.content}`)
-      .join('\n\n');
+    // Process sources in chunks to avoid token limits
+    const CHUNK_SIZE = 3; // Process 3 sources at a time
+    let combinedAnalysis = '';
 
-    console.log('Combined content length:', allContent.length);
-    console.log('Starting OpenAI completion');
+    // Process sources in chunks
+    for (let i = 0; i < sources.length; i += CHUNK_SIZE) {
+      const chunk = sources.slice(i, i + CHUNK_SIZE);
+      const chunkContent = chunk
+        .map(source => `[From ${source.metadata.fileName}]:\n${source.content}`)
+        .join('\n\n');
 
-    // First do an initial analysis of the query
-    const initialResponse = await openai.chat.completions.create({
+      console.log(`Processing chunk ${i / CHUNK_SIZE + 1} of ${Math.ceil(sources.length / CHUNK_SIZE)}`);
+      controller.enqueue(new TextEncoder().encode(`[STAGE:Analyzing part ${i / CHUNK_SIZE + 1} of ${Math.ceil(sources.length / CHUNK_SIZE)}]\n\n`));
+
+      // Analyze this chunk
+      const chunkResponse = await openai.chat.completions.create({
+        model: AI_CONFIG.model,
+        messages: [
+          {
+            role: 'system',
+            content: `You are analyzing a subset of interview transcripts to answer questions about: ${query}
+
+Your task is to:
+1. Analyze this portion of the content
+2. Identify relevant information and quotes
+3. Note key themes and insights
+4. Keep your analysis focused and concise
+
+Previous findings (if any):
+${combinedAnalysis ? combinedAnalysis : "No previous analysis"}
+
+Format your response with:
+- Key Information Found
+- Relevant Quotes
+- New Themes Identified`
+          },
+          {
+            role: 'user',
+            content: chunkContent
+          }
+        ],
+        temperature: 0.58,
+        max_tokens: 1000,
+        stream: true
+      });
+
+      // Stream the chunk analysis
+      let chunkAnalysis = '';
+      for await (const chunk of chunkResponse) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          const formattedContent = content
+            .replace(/\.\s+/g, '.\n\n')
+            .replace(/:\s+/g, ':\n');
+          controller.enqueue(new TextEncoder().encode(formattedContent));
+          chunkAnalysis += formattedContent;
+        }
+      }
+
+      combinedAnalysis += chunkAnalysis + '\n\n';
+    }
+
+    // Final synthesis of all chunks
+    console.log('Creating final synthesis');
+    controller.enqueue(new TextEncoder().encode('[STAGE:Creating final synthesis]\n\n'));
+
+    const synthesisResponse = await openai.chat.completions.create({
       model: AI_CONFIG.model,
       messages: [
         {
           role: 'system',
-          content: `You are analyzing interview transcripts to answer questions about: ${query}
+          content: `You are creating a final synthesis of the analysis about: ${query}
+
+Previous analysis:
+${combinedAnalysis}
 
 Your task is to:
-1. First provide a direct answer based on the available information
-2. Then identify key themes or aspects that could be explored further
-3. Support your answer with specific quotes
-4. Note any conflicting or complementary perspectives
+1. Provide a comprehensive answer based on all analyzed information
+2. Highlight the most important findings
+3. Present key quotes and evidence
+4. Identify overarching themes
 
 Format your response with:
 - Initial Answer (2-3 paragraphs)
@@ -52,29 +112,29 @@ Format your response with:
         },
         {
           role: 'user',
-          content: allContent
+          content: 'Please provide a final synthesis.'
         }
       ],
       temperature: 0.58,
-      max_tokens: 2000,
+      max_tokens: 1000,
       stream: true
     });
 
-    // Stream the initial analysis
-    console.log('Streaming initial analysis');
-    let initialAnalysis = '';
-    for await (const chunk of initialResponse) {
+    // Stream the synthesis
+    console.log('Streaming final synthesis');
+    let finalAnalysis = '';
+    for await (const chunk of synthesisResponse) {
       const content = chunk.choices[0]?.delta?.content || '';
       if (content) {
         const formattedContent = content
           .replace(/\.\s+/g, '.\n\n')
           .replace(/:\s+/g, ':\n');
         controller.enqueue(new TextEncoder().encode(formattedContent));
-        initialAnalysis += formattedContent;
+        finalAnalysis += formattedContent;
       }
     }
 
-    console.log('Initial analysis complete, length:', initialAnalysis.length);
+    console.log('Final synthesis complete');
 
     // Add prompt for further exploration
     controller.enqueue(new TextEncoder().encode('\n\nWould you like to explore any specific aspect in more detail? You can:\n\n'));
@@ -84,7 +144,7 @@ Format your response with:
     controller.enqueue(new TextEncoder().encode('4. Focus on specific examples or quotes\n\n'));
 
     console.log('Analysis complete, returning result');
-    return initialAnalysis;
+    return finalAnalysis;
   } catch (error) {
     console.error('Error in analyzeSourceCategories:', error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -102,51 +162,112 @@ export async function processUserChoice(
 ) {
   controller.enqueue(new TextEncoder().encode('[STAGE:Processing your selection]\n\n'));
 
-  // Filter sources based on user's choice
-  const response = await openai.chat.completions.create({
+  // Process sources in chunks
+  const CHUNK_SIZE = 3;
+  let combinedAnalysis = previousAnalysis;
+
+  for (let i = 0; i < sources.length; i += CHUNK_SIZE) {
+    const chunk = sources.slice(i, i + CHUNK_SIZE);
+    const chunkContent = chunk
+      .map(source => `[From ${source.metadata.fileName}]:\n${source.content}`)
+      .join('\n\n');
+
+    console.log(`Processing chunk ${i / CHUNK_SIZE + 1} of ${Math.ceil(sources.length / CHUNK_SIZE)}`);
+    controller.enqueue(new TextEncoder().encode(`[STAGE:Analyzing part ${i / CHUNK_SIZE + 1} of ${Math.ceil(sources.length / CHUNK_SIZE)}]\n\n`));
+
+    const chunkResponse = await openai.chat.completions.create({
+      model: AI_CONFIG.model,
+      messages: [
+        {
+          role: 'system',
+          content: `You are helping analyze interview transcripts based on the user's selection: "${choice}"
+
+Previous analysis:
+${combinedAnalysis}
+
+Your task is to:
+1. Focus on the specific aspect requested
+2. Analyze this portion of content
+3. Note connections to previous findings
+4. Keep analysis focused and concise
+
+Format your response with:
+- New Information Found
+- Relevant Quotes
+- Connections to Previous Analysis`
+        },
+        {
+          role: 'user',
+          content: chunkContent
+        }
+      ],
+      temperature: 0.58,
+      max_tokens: 1000,
+      stream: true
+    });
+
+    // Stream the chunk analysis
+    let chunkAnalysis = '';
+    for await (const chunk of chunkResponse) {
+      const content = chunk.choices[0]?.delta?.content || '';
+      if (content) {
+        const formattedContent = content
+          .replace(/\.\s+/g, '.\n\n')
+          .replace(/:\s+/g, ':\n');
+        controller.enqueue(new TextEncoder().encode(formattedContent));
+        chunkAnalysis += formattedContent;
+      }
+    }
+
+    combinedAnalysis += '\n\n' + chunkAnalysis;
+  }
+
+  // Create final synthesis
+  console.log('Creating final synthesis');
+  controller.enqueue(new TextEncoder().encode('[STAGE:Creating final synthesis]\n\n'));
+
+  const synthesisResponse = await openai.chat.completions.create({
     model: AI_CONFIG.model,
     messages: [
       {
         role: 'system',
-        content: `You are helping analyze interview transcripts based on the user's selection: "${choice}"
+        content: `You are creating a synthesis of the analysis about: "${choice}"
 
 Previous analysis:
-${previousAnalysis}
+${combinedAnalysis}
 
 Your task is to:
-1. Focus on the specific aspect requested
-2. Provide detailed analysis with quotes
-3. Note connections to other aspects
-4. Suggest follow-up areas to explore
+1. Provide a comprehensive analysis
+2. Highlight key findings and patterns
+3. Present most relevant quotes
+4. Suggest follow-up areas
 
 Format your response with:
 - Clear section headings
-- Relevant quotes with context
-- Analysis of patterns
+- Key findings and patterns
+- Most relevant quotes
 - Potential follow-up questions`
       },
       {
         role: 'user',
-        content: sources
-          .map(source => `[From ${source.metadata.fileName}]:\n${source.content}`)
-          .join('\n\n')
+        content: 'Please provide a final synthesis.'
       }
     ],
     temperature: 0.58,
-    max_tokens: 2000,
+    max_tokens: 1000,
     stream: true
   });
 
-  // Stream the focused analysis
-  let focusedAnalysis = '';
-  for await (const chunk of response) {
+  // Stream the synthesis
+  let finalAnalysis = '';
+  for await (const chunk of synthesisResponse) {
     const content = chunk.choices[0]?.delta?.content || '';
     if (content) {
       const formattedContent = content
         .replace(/\.\s+/g, '.\n\n')
         .replace(/:\s+/g, ':\n');
       controller.enqueue(new TextEncoder().encode(formattedContent));
-      focusedAnalysis += formattedContent;
+      finalAnalysis += formattedContent;
     }
   }
 
@@ -157,7 +278,7 @@ Format your response with:
   controller.enqueue(new TextEncoder().encode('3. See how this connects to other topics\n'));
   controller.enqueue(new TextEncoder().encode('4. Get a final summary of everything we\'ve discussed\n\n'));
 
-  return focusedAnalysis;
+  return finalAnalysis;
 }
 
 export async function createFinalSummary(
