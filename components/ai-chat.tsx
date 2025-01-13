@@ -265,8 +265,8 @@ export function AIChat() {
   }
 
   return (
-    <div className="h-full flex flex-col relative">
-      <ScrollArea className="absolute inset-0 bottom-[120px] p-4">
+    <div className="h-[600px] flex flex-col">
+      <ScrollArea className="flex-grow mb-4 p-4 border rounded">
         {messages.map((message, index) => (
           <div key={index} className={`mb-2 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
             <span className={`inline-block p-2 rounded-lg text-sm ${
@@ -285,16 +285,15 @@ export function AIChat() {
         )}
       </ScrollArea>
 
-      <div className="absolute bottom-0 left-0 right-0 border-t bg-background">
+      <div className="flex flex-col gap-2">
         {/* Quick Action Buttons */}
-        <div className="flex gap-2 px-4 py-3 border-b">
+        <div className="flex flex-wrap gap-2">
           {quickActions.map((action, index) => (
             <Button
               key={index}
               onClick={action.action}
               variant="outline"
               size="sm"
-              className="text-sm text-muted-foreground hover:text-foreground border-[0.5px]"
               disabled={isLoading}
             >
               {action.label}
@@ -303,45 +302,41 @@ export function AIChat() {
         </div>
 
         {/* Input Area */}
-        <div className="flex items-center px-4 py-3">
-          <div className="flex-1 flex items-center gap-3">
-            <Input
-              ref={inputRef}
-              value={input}
-              onChange={handleInputChange}
-              placeholder="Start chatting, ask a question, or choose an option above"
-              className="flex-1 text-sm"
-              onKeyPress={handleKeyPress}
-              disabled={isLoading}
-            />
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1">
-                <Checkbox
-                  id="useSources"
-                  checked={useSources}
-                  onCheckedChange={(checked) => {
-                    const newValue = checked as boolean;
-                    setUseSources(newValue);
-                  }}
-                  disabled={isLoading}
-                />
-                <label
-                  htmlFor="useSources"
-                  className="text-sm text-muted-foreground whitespace-nowrap"
-                >
-                  Use sources
-                </label>
-              </div>
-              <Button 
-                onClick={sendMessage} 
+        <div className="flex gap-2 items-center">
+          <Input
+            ref={inputRef}
+            value={input}
+            onChange={handleInputChange}
+            placeholder="Start chatting, ask a question, or choose an option above"
+            className="flex-grow"
+            onKeyPress={handleKeyPress}
+            disabled={isLoading}
+          />
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <Checkbox
+                id="useSources"
+                checked={useSources}
+                onCheckedChange={(checked) => {
+                  const newValue = checked as boolean;
+                  setUseSources(newValue);
+                }}
                 disabled={isLoading}
-                size="sm"
-                variant="outline"
-                className="border-[0.5px]"
+              />
+              <label
+                htmlFor="useSources"
+                className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
               >
-                {isLoading ? 'Thinking...' : 'Send'}
-              </Button>
+                Use sources
+              </label>
             </div>
+            <Button 
+              onClick={sendMessage} 
+              disabled={isLoading}
+              className="min-w-[80px]"
+            >
+              {isLoading ? 'Thinking...' : 'Send'}
+            </Button>
           </div>
         </div>
       </div>
