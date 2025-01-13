@@ -45,7 +45,7 @@ export class OpenRouterClient {
         signal: abortController.signal,
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
+          'Authorization': this.apiKey.startsWith('Bearer ') ? this.apiKey : `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://github.com/noochmedia/story_producer_v2',
           'X-Title': 'Story Producer v2'
@@ -131,7 +131,7 @@ export class OpenRouterClient {
         signal: abortController.signal,
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.apiKey}`,
+          'Authorization': this.apiKey.startsWith('Bearer ') ? this.apiKey : `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
           'HTTP-Referer': 'https://github.com/noochmedia/story_producer_v2',
           'X-Title': 'Story Producer v2'
