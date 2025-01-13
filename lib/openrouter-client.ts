@@ -31,6 +31,12 @@ export class OpenRouterClient {
     const encoder = new TextEncoder();
 
     try {
+      console.log('Sending analysis request to OpenRouter:', {
+        model,
+        messageCount: messages.length,
+        maxTokens
+      });
+
       const response = await fetch(`${this.baseURL}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -121,13 +127,32 @@ export class OpenRouterClient {
       });
 
       if (!response.ok) {
-        throw new Error(`OpenRouter API error: ${response.status}`);
+        const errorData = await response.json().catch(() => ({}));
+        console.error('OpenRouter API error:', {
+          status: response.status,
+          statusText: response.statusText,
+          error: errorData
+        });
+        throw new Error(`OpenRouter API error: ${response.status} - ${errorData.error || response.statusText}`);
       }
 
+      console.log('OpenRouter response received');
       const data = await response.json();
-      const content = data.choices[0]?.message?.content;
+      console.log('OpenRouter response parsed:', {
+        hasChoices: !!data.choices,
+        firstChoice: data.choices?.[0] ? {
+          hasMessage: !!data.choices[0].message,
+          hasContent: !!data.choices[0].message?.content,
+          contentLength: data.choices[0].message?.content?.length
+        } : null
+      });
+      const content = data.choices?.[0]?.message?.content;
       
       if (content) {
+        console.log('Analysis content received:', {
+          length: content.length,
+          preview: content.substring(0, 100) + '...'
+        });
         fullResponse = content;
         controller.enqueue(encoder.encode(`data: ${content}\n\n`));
       }

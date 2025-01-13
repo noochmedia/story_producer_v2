@@ -33,11 +33,20 @@ export async function analyzeSourceCategories(
         .map(source => `[From ${source.metadata.fileName}]:\n${source.content}`)
         .join('\n\n');
 
-      console.log(`Processing chunk ${i / CHUNK_SIZE + 1} of ${Math.ceil(sources.length / CHUNK_SIZE)}`);
+      console.log(`Processing chunk ${i / CHUNK_SIZE + 1}:`, {
+        chunkSize: chunk.length,
+        totalChunks: Math.ceil(sources.length / CHUNK_SIZE),
+        contentLength: chunkContent.length
+      });
       controller.enqueue(new TextEncoder().encode(`[STAGE:Analyzing part ${i / CHUNK_SIZE + 1} of ${Math.ceil(sources.length / CHUNK_SIZE)}]\n\n`));
 
       try {
         // Analyze this chunk using OpenRouter
+        console.log('Sending chunk for analysis:', {
+          chunkNumber: i / CHUNK_SIZE + 1,
+          combinedAnalysisLength: combinedAnalysis.length
+        });
+
         const chunkAnalysis = await openRouter.generateAnalysis([
           {
             role: 'system',
@@ -64,8 +73,15 @@ Format your response with:
         ], 1000, controller);
 
         if (chunkAnalysis) {
+          console.log(`Chunk ${i / CHUNK_SIZE + 1} analysis complete:`, {
+            analysisLength: chunkAnalysis.length,
+            preview: chunkAnalysis.substring(0, 100) + '...'
+          });
           combinedAnalysis += chunkAnalysis + '\n\n';
           controller.enqueue(new TextEncoder().encode(`data: ${chunkAnalysis}\n\n`));
+        } else {
+          console.warn(`No analysis returned for chunk ${i / CHUNK_SIZE + 1}`);
+          controller.enqueue(new TextEncoder().encode(`data: Warning: No analysis generated for this section. Moving to next part.\n\n`));
         }
       } catch (error) {
         console.error('Error analyzing chunk:', error);
@@ -74,12 +90,15 @@ Format your response with:
     }
 
     // Final synthesis of all chunks
-    console.log('Creating final synthesis');
+    console.log('Starting final synthesis:', {
+      combinedAnalysisLength: combinedAnalysis.length
+    });
     controller.enqueue(new TextEncoder().encode('[STAGE:Creating final synthesis]\n\n'));
 
-      // Generate final synthesis using OpenRouter
-      console.log('Creating final synthesis');
-      const finalAnalysis = await openRouter.generateAnalysis([
+    let finalAnalysis = '';
+    try {
+      console.log('Sending final synthesis request');
+      finalAnalysis = await openRouter.generateAnalysis([
         {
           role: 'system',
           content: `You are creating a final synthesis of the analysis about: ${query}
@@ -106,8 +125,19 @@ Format your response with:
       ], 1000, controller);
 
       if (finalAnalysis) {
+        console.log('Final synthesis complete:', {
+          analysisLength: finalAnalysis.length,
+          preview: finalAnalysis.substring(0, 100) + '...'
+        });
         controller.enqueue(new TextEncoder().encode(`data: ${finalAnalysis}\n\n`));
+      } else {
+        console.warn('No final synthesis returned');
+        controller.enqueue(new TextEncoder().encode(`data: Warning: Unable to generate final synthesis.\n\n`));
       }
+    } catch (error) {
+      console.error('Error generating final synthesis:', error);
+      controller.enqueue(new TextEncoder().encode(`data: Error generating final synthesis: ${error instanceof Error ? error.message : 'Unknown error'}\n\n`));
+    }
 
     console.log('Final synthesis complete');
 
