@@ -1,5 +1,10 @@
 export type DocumentType = 'source' | 'project_details';
 
+export interface ChatMessage {
+  role: 'system' | 'user' | 'assistant';
+  content: string;
+}
+
 export interface DocumentMetadata {
   fileName: string;
   fileType: string;

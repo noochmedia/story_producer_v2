@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+import { OpenRouterClient } from './openrouter-client';
 import { AI_CONFIG } from './ai-config';
 import { Document } from './document-store';
 import VercelEmbeddings from './vercel-embeddings';
@@ -15,7 +15,7 @@ async function getEmbeddings() {
 export async function analyzeSourceCategories(
   sources: Document[],
   query: string,
-  openai: OpenAI,
+  openRouter: OpenRouterClient,
   controller: ReadableStreamDefaultController
 ) {
   try {
@@ -36,13 +36,11 @@ export async function analyzeSourceCategories(
       console.log(`Processing chunk ${i / CHUNK_SIZE + 1} of ${Math.ceil(sources.length / CHUNK_SIZE)}`);
       controller.enqueue(new TextEncoder().encode(`[STAGE:Analyzing part ${i / CHUNK_SIZE + 1} of ${Math.ceil(sources.length / CHUNK_SIZE)}]\n\n`));
 
-      // Analyze this chunk
-      const chunkResponse = await openai.chat.completions.create({
-        model: AI_CONFIG.model,
-        messages: [
-          {
-            role: 'system',
-            content: `You are analyzing a subset of interview transcripts to answer questions about: ${query}
+      // Analyze this chunk using OpenRouter
+      const chunkAnalysis = await openRouter.generateAnalysis([
+        {
+          role: 'system',
+          content: `You are analyzing a subset of interview transcripts to answer questions about: ${query}
 
 Your task is to:
 1. Analyze this portion of the content
@@ -57,29 +55,12 @@ Format your response with:
 - Key Information Found
 - Relevant Quotes
 - New Themes Identified`
-          },
-          {
-            role: 'user',
-            content: chunkContent
-          }
-        ],
-        temperature: 0.58,
-        max_tokens: 1000,
-        stream: true
-      });
-
-      // Stream the chunk analysis
-      let chunkAnalysis = '';
-      for await (const chunk of chunkResponse) {
-        const content = chunk.choices[0]?.delta?.content || '';
-        if (content) {
-          const formattedContent = content
-            .replace(/\.\s+/g, '.\n\n')
-            .replace(/:\s+/g, ':\n');
-          controller.enqueue(new TextEncoder().encode(formattedContent));
-          chunkAnalysis += formattedContent;
+        },
+        {
+          role: 'user',
+          content: chunkContent
         }
-      }
+      ], 1000, controller);
 
       combinedAnalysis += chunkAnalysis + '\n\n';
     }
@@ -88,9 +69,9 @@ Format your response with:
     console.log('Creating final synthesis');
     controller.enqueue(new TextEncoder().encode('[STAGE:Creating final synthesis]\n\n'));
 
-    const synthesisResponse = await openai.chat.completions.create({
-      model: AI_CONFIG.model,
-      messages: [
+      // Generate final synthesis using OpenRouter
+      console.log('Creating final synthesis');
+      const finalAnalysis = await openRouter.generateAnalysis([
         {
           role: 'system',
           content: `You are creating a final synthesis of the analysis about: ${query}
@@ -114,25 +95,7 @@ Format your response with:
           role: 'user',
           content: 'Please provide a final synthesis.'
         }
-      ],
-      temperature: 0.58,
-      max_tokens: 1000,
-      stream: true
-    });
-
-    // Stream the synthesis
-    console.log('Streaming final synthesis');
-    let finalAnalysis = '';
-    for await (const chunk of synthesisResponse) {
-      const content = chunk.choices[0]?.delta?.content || '';
-      if (content) {
-        const formattedContent = content
-          .replace(/\.\s+/g, '.\n\n')
-          .replace(/:\s+/g, ':\n');
-        controller.enqueue(new TextEncoder().encode(formattedContent));
-        finalAnalysis += formattedContent;
-      }
-    }
+      ], 1000, controller);
 
     console.log('Final synthesis complete');
 
@@ -157,7 +120,7 @@ export async function processUserChoice(
   choice: string,
   sources: Document[],
   previousAnalysis: string,
-  openai: OpenAI,
+  openRouter: OpenRouterClient,
   controller: ReadableStreamDefaultController
 ) {
   controller.enqueue(new TextEncoder().encode('[STAGE:Processing your selection]\n\n'));
@@ -175,12 +138,10 @@ export async function processUserChoice(
     console.log(`Processing chunk ${i / CHUNK_SIZE + 1} of ${Math.ceil(sources.length / CHUNK_SIZE)}`);
     controller.enqueue(new TextEncoder().encode(`[STAGE:Analyzing part ${i / CHUNK_SIZE + 1} of ${Math.ceil(sources.length / CHUNK_SIZE)}]\n\n`));
 
-    const chunkResponse = await openai.chat.completions.create({
-      model: AI_CONFIG.model,
-      messages: [
-        {
-          role: 'system',
-          content: `You are helping analyze interview transcripts based on the user's selection: "${choice}"
+    const chunkAnalysis = await openRouter.generateAnalysis([
+      {
+        role: 'system',
+        content: `You are helping analyze interview transcripts based on the user's selection: "${choice}"
 
 Previous analysis:
 ${combinedAnalysis}
@@ -195,29 +156,12 @@ Format your response with:
 - New Information Found
 - Relevant Quotes
 - Connections to Previous Analysis`
-        },
-        {
-          role: 'user',
-          content: chunkContent
-        }
-      ],
-      temperature: 0.58,
-      max_tokens: 1000,
-      stream: true
-    });
-
-    // Stream the chunk analysis
-    let chunkAnalysis = '';
-    for await (const chunk of chunkResponse) {
-      const content = chunk.choices[0]?.delta?.content || '';
-      if (content) {
-        const formattedContent = content
-          .replace(/\.\s+/g, '.\n\n')
-          .replace(/:\s+/g, ':\n');
-        controller.enqueue(new TextEncoder().encode(formattedContent));
-        chunkAnalysis += formattedContent;
+      },
+      {
+        role: 'user',
+        content: chunkContent
       }
-    }
+    ], 1000, controller);
 
     combinedAnalysis += '\n\n' + chunkAnalysis;
   }
@@ -226,12 +170,10 @@ Format your response with:
   console.log('Creating final synthesis');
   controller.enqueue(new TextEncoder().encode('[STAGE:Creating final synthesis]\n\n'));
 
-  const synthesisResponse = await openai.chat.completions.create({
-    model: AI_CONFIG.model,
-    messages: [
-      {
-        role: 'system',
-        content: `You are creating a synthesis of the analysis about: "${choice}"
+  const finalAnalysis = await openRouter.generateAnalysis([
+    {
+      role: 'system',
+      content: `You are creating a synthesis of the analysis about: "${choice}"
 
 Previous analysis:
 ${combinedAnalysis}
@@ -247,29 +189,12 @@ Format your response with:
 - Key findings and patterns
 - Most relevant quotes
 - Potential follow-up questions`
-      },
-      {
-        role: 'user',
-        content: 'Please provide a final synthesis.'
-      }
-    ],
-    temperature: 0.58,
-    max_tokens: 1000,
-    stream: true
-  });
-
-  // Stream the synthesis
-  let finalAnalysis = '';
-  for await (const chunk of synthesisResponse) {
-    const content = chunk.choices[0]?.delta?.content || '';
-    if (content) {
-      const formattedContent = content
-        .replace(/\.\s+/g, '.\n\n')
-        .replace(/:\s+/g, ':\n');
-      controller.enqueue(new TextEncoder().encode(formattedContent));
-      finalAnalysis += formattedContent;
+    },
+    {
+      role: 'user',
+      content: 'Please provide a final synthesis.'
     }
-  }
+  ], 1000, controller);
 
   // Add prompt for further exploration
   controller.enqueue(new TextEncoder().encode('\n\nWould you like to:\n\n'));
@@ -284,17 +209,15 @@ Format your response with:
 export async function createFinalSummary(
   allAnalyses: string[],
   query: string,
-  openai: OpenAI,
+  openRouter: OpenRouterClient,
   controller: ReadableStreamDefaultController
 ) {
   controller.enqueue(new TextEncoder().encode('[STAGE:Creating final summary]\n\n'));
 
-  const response = await openai.chat.completions.create({
-    model: AI_CONFIG.model,
-    messages: [
-      {
-        role: 'system',
-        content: `You are creating a final summary of our analysis about: ${query}
+  await openRouter.generateAnalysis([
+    {
+      role: 'system',
+      content: `You are creating a final summary of our analysis about: ${query}
 
 Previous analyses:
 ${allAnalyses.join('\n\n---\n\n')}
@@ -310,25 +233,10 @@ Format your response with:
 - Key findings by category
 - Notable quotes and examples
 - Overall conclusions`
-      },
-      {
-        role: 'user',
-        content: 'Please provide a final summary.'
-      }
-    ],
-    temperature: 0.58,
-    max_tokens: 2000,
-    stream: true
-  });
-
-  // Stream the final summary
-  for await (const chunk of response) {
-    const content = chunk.choices[0]?.delta?.content || '';
-    if (content) {
-      const formattedContent = content
-        .replace(/\.\s+/g, '.\n\n')
-        .replace(/:\s+/g, ':\n');
-      controller.enqueue(new TextEncoder().encode(formattedContent));
+    },
+    {
+      role: 'user',
+      content: 'Please provide a final summary.'
     }
-  }
+  ], 2000, controller);
 }

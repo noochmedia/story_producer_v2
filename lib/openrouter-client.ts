@@ -2,7 +2,7 @@
 import { ChatMessage } from './types';
 import { AI_CONFIG } from './ai-config';
 
-interface OpenRouterResponse {
+interface OpenRouterStreamResponse {
   choices: {
     delta?: {
       content?: string;
@@ -22,24 +22,147 @@ export class OpenRouterClient {
     this.apiKey = apiKey;
   }
 
-  async sendMessage(messages: ChatMessage[], maxTokens: number): Promise<string> {
-    const model = messages.length > 50 ? "claude-2" : "gpt-4"; // Conditional routing based on message length
+  async streamResponse(
+    messages: ChatMessage[], 
+    maxTokens: number,
+    controller: ReadableStreamDefaultController
+  ): Promise<boolean> {
+    const model = messages.length > 50 ? "anthropic/claude-2" : "openai/gpt-4";
+    const encoder = new TextEncoder();
 
-    const response = await fetch(`${this.baseURL}/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${this.apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        messages,
-        max_tokens: maxTokens,
-        temperature: AI_CONFIG.temperature,
-      }),
-    });
+    try {
+      const response = await fetch(`${this.baseURL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://github.com/noochmedia/story_producer_v2',
+          'X-Title': 'Story Producer v2'
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          max_tokens: maxTokens,
+          temperature: AI_CONFIG.temperature,
+          stream: true
+        }),
+      });
 
-    const data: OpenRouterResponse = await response.json();
-    return data.choices[0]?.message?.content || '';
+      if (!response.ok) {
+        throw new Error(`OpenRouter API error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body available');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          if (line.includes('[DONE]')) continue;
+
+          try {
+            if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.slice(6)) as OpenRouterStreamResponse;
+              const content = data.choices[0]?.delta?.content;
+              if (content) {
+                controller.enqueue(encoder.encode(`data: ${content}\n\n`));
+              }
+            }
+          } catch (error) {
+            console.error('Error parsing stream line:', error);
+          }
+        }
+      }
+
+      return true;
+    } catch (error) {
+      console.error('OpenRouter streaming error:', error);
+      throw error;
+    }
+  }
+
+  async generateAnalysis(
+    messages: ChatMessage[],
+    maxTokens: number,
+    controller: ReadableStreamDefaultController
+  ): Promise<string> {
+    const model = "anthropic/claude-2"; // Use Claude for analysis
+    const encoder = new TextEncoder();
+    let fullResponse = '';
+
+    try {
+      const response = await fetch(`${this.baseURL}/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://github.com/noochmedia/story_producer_v2',
+          'X-Title': 'Story Producer v2'
+        },
+        body: JSON.stringify({
+          model,
+          messages,
+          max_tokens: maxTokens,
+          temperature: AI_CONFIG.temperature,
+          stream: true
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`OpenRouter API error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response body available');
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          if (line.includes('[DONE]')) continue;
+
+          try {
+            if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.slice(6)) as OpenRouterStreamResponse;
+              const content = data.choices[0]?.delta?.content;
+              if (content) {
+                controller.enqueue(encoder.encode(`data: ${content}\n\n`));
+                fullResponse += content;
+              }
+            }
+          } catch (error) {
+            console.error('Error parsing stream line:', error);
+          }
+        }
+      }
+
+      return fullResponse;
+    } catch (error) {
+      console.error('OpenRouter analysis error:', error);
+      throw error;
+    }
   }
 }

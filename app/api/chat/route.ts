@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
-import { OpenAI } from 'openai';
-import { DocumentStore, Document } from '@/lib/document-store';
-import { analyzeSourceCategories, processUserChoice } from '@/lib/interactive-search';
+import { DocumentStore } from '@/lib/document-store';
+import { analyzeSourceCategories } from '@/lib/interactive-search';
 import { AI_CONFIG } from '@/lib/ai-config';
+import { OpenRouterClient } from '@/lib/openrouter-client';
 
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Initialize OpenRouter client
+if (!process.env.OPENROUTER_API_KEY) {
+  throw new Error('OpenRouter API key not configured');
+}
+const openRouter = new OpenRouterClient(process.env.OPENROUTER_API_KEY);
 
 export async function POST(request: Request) {
   try {
@@ -20,23 +21,17 @@ export async function POST(request: Request) {
       );
     }
 
-
     // Get the last user message
     const lastUserMessage = messages[messages.length - 1];
 
     // Build system prompt based on mode and project context
     let systemPrompt = AI_CONFIG.systemPrompt;
-
-    // Add project context if available
     if (projectDetails) {
       systemPrompt += `\n\nProject Context: ${projectDetails}`;
     }
-
-    // Add mode-specific instructions
     if (deepDive) {
       systemPrompt += `\n\nYou are in Deep Dive mode. Analyze source materials thoroughly and provide detailed, evidence-based responses.`;
     }
-
     if (isSoundbiteRequest) {
       systemPrompt += `\n\nYou are in Soundbite mode. Focus on identifying or crafting compelling, concise quotes that capture key themes and moments.`;
     }
@@ -52,76 +47,42 @@ export async function POST(request: Request) {
             controller.enqueue(encoder.encode('data: [STAGE: Analyzing source materials]\n\n'));
 
             try {
-              // Get document store instance
-              console.log('Getting document store instance...');
+              // Get document store instance and search for relevant sources
               const store = await DocumentStore.getInstance();
-              console.log('Document store initialized:', {
-                hasEmbeddings: store !== null,
-                hasSearchSimilar: typeof store.searchSimilar === 'function'
-              });
-
-              // Ensure we have the OpenAI API key
-              if (!process.env.OPENAI_API_KEY) {
-                throw new Error('OpenAI API key not configured');
-              }
-
-              // Search for relevant sources
-              console.log('Searching for relevant sources...');
               const sources = await store.searchSimilar(lastUserMessage.content, { type: 'source' });
-              console.log('Search completed successfully');
 
               if (!sources.length) {
-                console.log('No relevant sources found');
                 controller.enqueue(encoder.encode('data: No relevant sources found. Please try a different query or check if sources have been uploaded.\n\n'));
                 return;
               }
 
-              // Log found sources
-              console.log('Found sources:', sources.map(doc => ({
-                id: doc.id,
-                fileName: doc.metadata.fileName,
-                score: doc.metadata.score,
-                contentPreview: doc.content.substring(0, 100) + '...'
-              })));
+              // Log found sources for debugging
+              console.log('Found sources:', sources.length);
               
-              // Analyze sources and stream response
-              console.log('Starting source analysis...');
+              // Analyze sources using OpenRouter
               await analyzeSourceCategories(
                 sources,
                 lastUserMessage.content,
-                openai,
+                openRouter,
                 controller
               );
-              console.log('Source analysis complete');
+
             } catch (error) {
-              console.error('Error in deep dive mode:', {
-                error,
-                message: error instanceof Error ? error.message : 'Unknown error',
-                stack: error instanceof Error ? error.stack : undefined
-              });
+              console.error('Error in deep dive mode:', error);
               controller.enqueue(encoder.encode(`data: Error analyzing sources: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.\n\n`));
               return;
             }
           } else {
-            // Regular chat mode
+            // Regular chat mode using OpenRouter
             controller.enqueue(encoder.encode('data: [STAGE: Processing request]\n\n'));
 
-            const completion = await openai.chat.completions.create({
-              model: AI_CONFIG.model,
-              temperature: AI_CONFIG.temperature,
-              max_tokens: AI_CONFIG.max_tokens,
-              messages: [
-                { role: 'system', content: systemPrompt },
-                ...messages
-              ],
-              stream: true
-            });
+            const response = await openRouter.streamResponse([
+              { role: 'system', content: systemPrompt },
+              ...messages
+            ], AI_CONFIG.max_tokens, controller);
 
-            // Stream the response
-            for await (const chunk of completion) {
-              if (chunk.choices[0]?.delta?.content) {
-                controller.enqueue(encoder.encode(`data: ${chunk.choices[0].delta.content}\n\n`));
-              }
+            if (!response) {
+              throw new Error('Failed to get response from OpenRouter');
             }
           }
 

@@ -265,7 +265,7 @@ export function AIChat() {
   }
 
   return (
-    <div className="h-[600px] flex flex-col">
+    <div className="h-full flex flex-col">
       <ScrollArea className="flex-grow mb-4 p-4 border rounded">
         {messages.map((message, index) => (
           <div key={index} className={`mb-2 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
