@@ -70,7 +70,7 @@ Format your response with:
             role: 'user',
             content: chunkContent
           }
-        ], 1000, controller);
+        ], 4000, controller); // Increase token limit for large documents
 
         if (chunkAnalysis) {
           console.log(`Chunk ${i / CHUNK_SIZE + 1} analysis complete:`, {
@@ -122,7 +122,7 @@ Format your response with:
           role: 'user',
           content: 'Please provide a final synthesis.'
         }
-      ], 1000, controller);
+      ], 4000, controller); // Increase token limit for final synthesis
 
       if (finalAnalysis) {
         console.log('Final synthesis complete:', {
@@ -203,7 +203,7 @@ Format your response with:
         role: 'user',
         content: chunkContent
       }
-    ], 1000, controller);
+    ], 4000, controller); // Increase token limit for user choice analysis
 
     combinedAnalysis += '\n\n' + chunkAnalysis;
   }
@@ -280,5 +280,5 @@ Format your response with:
       role: 'user',
       content: 'Please provide a final summary.'
     }
-  ], 2000, controller);
+  ], 4000, controller); // Increase token limit for final summary
 }
