@@ -51,10 +51,10 @@ export class OpenRouterClient {
         signal: abortController.signal,
         method: 'POST',
         headers: {
-          'Authorization': `Bearer sk-${this.apiKey.replace(/^(Bearer\s+)?sk-/, '')}`,
+          'Authorization': `Bearer ${this.apiKey.replace(/^(Bearer\s+)?/, '')}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/noochmedia/story_producer_v2',
-          'X-Title': 'Story Producer v2'
+          'HTTP-Referer': 'https://story-producer-v2.vercel.app',
+          'X-Title': 'Story Producer'
         },
         body: JSON.stringify({
           model,
@@ -143,10 +143,10 @@ export class OpenRouterClient {
         signal: abortController.signal,
         method: 'POST',
         headers: {
-          'Authorization': `Bearer sk-${this.apiKey.replace(/^(Bearer\s+)?sk-/, '')}`,
+          'Authorization': `Bearer ${this.apiKey.replace(/^(Bearer\s+)?/, '')}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': 'https://github.com/noochmedia/story_producer_v2',
-          'X-Title': 'Story Producer v2'
+          'HTTP-Referer': 'https://story-producer-v2.vercel.app',
+          'X-Title': 'Story Producer'
         },
         body: JSON.stringify({
           model,
